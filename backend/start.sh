@@ -1,4 +1,8 @@
 #!/bin/bash
+
+python -m venv backend
+source backend/bin/activate
+
 # Create .env file if it doesn't exist
 if [ ! -f .env ]; then
     echo "Creating .env file from .env.example..."
