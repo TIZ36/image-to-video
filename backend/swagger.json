@@ -1,0 +1,673 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Image to Sales Video API",
+    "description": "API for generating sales videos from product images using AI",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000/api",
+      "description": "Development server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Projects",
+      "description": "Project management operations"
+    },
+    {
+      "name": "Images",
+      "description": "Image upload and management"
+    },
+    {
+      "name": "Scripts",
+      "description": "Marketing script generation and management"
+    },
+    {
+      "name": "Videos",
+      "description": "Sales video generation and access"
+    }
+  ],
+  "paths": {
+    "/projects": {
+      "post": {
+        "tags": ["Projects"],
+        "summary": "Create a new project",
+        "description": "Create a new project with a name and optional description",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Project created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateProjectResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": ["Projects"],
+        "summary": "List all projects",
+        "description": "Retrieve a list of all projects",
+        "responses": {
+          "200": {
+            "description": "A list of projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListProjectsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}": {
+      "get": {
+        "tags": ["Projects"],
+        "summary": "Get project details",
+        "description": "Retrieve the details of a specific project",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "description": "The ID of the project to retrieve",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project details retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetProjectResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/image": {
+      "post": {
+        "tags": ["Images"],
+        "summary": "Upload an image for a project",
+        "description": "Upload an image file for a specific project",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "description": "The ID of the project to upload the image for",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "image": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The image file to upload"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Image uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadImageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid image format or missing image",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/script/generate": {
+      "post": {
+        "tags": ["Scripts"],
+        "summary": "Generate a marketing script",
+        "description": "Generate a marketing script for the project using LLM based on the uploaded image",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "description": "The ID of the project to generate the script for",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Script generated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateScriptResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No image uploaded for the project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error generating script",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/script": {
+      "put": {
+        "tags": ["Scripts"],
+        "summary": "Update the marketing script",
+        "description": "Update the marketing script for a specific project",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "description": "The ID of the project to update the script for",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateScriptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Script updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateScriptResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid script content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/video/generate": {
+      "post": {
+        "tags": ["Videos"],
+        "summary": "Generate a sales video",
+        "description": "Generate a sales video for the project using the uploaded image and marketing script",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "description": "The ID of the project to generate the video for",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Video generation initiated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateVideoResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No image or script for the project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error generating video",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/videos/{filename}": {
+      "get": {
+        "tags": ["Videos"],
+        "summary": "Get a video file",
+        "description": "Retrieve a generated video file by filename",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "description": "The filename of the video to retrieve",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The video file",
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Video file not found"
+          }
+        }
+      }
+    },
+    "/images/{projectId}/{filename}": {
+      "get": {
+        "tags": ["Images"],
+        "summary": "Get an image file",
+        "description": "Retrieve an uploaded image file by project ID and filename",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "description": "The ID of the project the image belongs to",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "description": "The filename of the image to retrieve",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The image file",
+            "content": {
+              "image/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Image file not found"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Project": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The unique identifier for the project"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the project"
+          },
+          "description": {
+            "type": "string",
+            "description": "The description of the project"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The time when the project was created"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The time when the project was last updated"
+          },
+          "image_path": {
+            "type": ["string", "null"],
+            "description": "The path to the uploaded image, or null if no image has been uploaded"
+          },
+          "script": {
+            "type": ["string", "null"],
+            "description": "The marketing script for the project, or null if no script has been generated"
+          },
+          "video": {
+            "type": ["object", "null"],
+            "description": "The video generation result, or null if no video has been generated",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["processing", "completed", "failed"],
+                "description": "The status of the video generation"
+              },
+              "url": {
+                "type": "string",
+                "description": "The URL to the generated video (only present if status is 'completed')"
+              },
+              "duration": {
+                "type": "number",
+                "description": "The duration of the video in seconds (only present if status is 'completed')"
+              },
+              "error": {
+                "type": "string",
+                "description": "The error message if video generation failed (only present if status is 'failed')"
+              }
+            }
+          }
+        }
+      },
+      "CreateProjectRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the project"
+          },
+          "description": {
+            "type": "string",
+            "description": "The description of the project"
+          }
+        }
+      },
+      "CreateProjectResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the request was successful"
+          },
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          }
+        }
+      },
+      "ListProjectsResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the request was successful"
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Project"
+            }
+          }
+        }
+      },
+      "GetProjectResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the request was successful"
+          },
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          }
+        }
+      },
+      "UploadImageResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the request was successful"
+          },
+          "message": {
+            "type": "string",
+            "description": "A message describing the result of the request"
+          },
+          "image_path": {
+            "type": "string",
+            "description": "The path to the uploaded image"
+          }
+        }
+      },
+      "GenerateScriptResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the request was successful"
+          },
+          "script": {
+            "type": "string",
+            "description": "The generated marketing script"
+          }
+        }
+      },
+      "UpdateScriptRequest": {
+        "type": "object",
+        "required": ["script"],
+        "properties": {
+          "script": {
+            "type": "string",
+            "description": "The updated marketing script"
+          }
+        }
+      },
+      "UpdateScriptResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the request was successful"
+          },
+          "message": {
+            "type": "string",
+            "description": "A message describing the result of the request"
+          },
+          "script": {
+            "type": "string",
+            "description": "The updated marketing script"
+          }
+        }
+      },
+      "GenerateVideoResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the request was successful"
+          },
+          "video": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["processing", "completed", "failed"],
+                "description": "The status of the video generation"
+              },
+              "url": {
+                "type": "string",
+                "description": "The URL to the generated video (only present if status is 'completed')"
+              },
+              "duration": {
+                "type": "number",
+                "description": "The duration of the video in seconds (only present if status is 'completed')"
+              },
+              "error": {
+                "type": "string",
+                "description": "The error message if video generation failed (only present if status is 'failed')"
+              }
+            }
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "The error message"
+          }
+        }
+      }
+    }
+  }
+} 
