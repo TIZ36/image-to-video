@@ -1,7 +1,6 @@
 #!/bin/bash
 
-python -m venv backend
-source backend/bin/activate
+source backendenv/bin/activate
 
 # Create .env file if it doesn't exist
 if [ ! -f .env ]; then
@@ -16,9 +15,9 @@ mkdir -p uploads videos
 # Check if we have the required packages
 if ! pip list | grep -q "flask"; then
     echo "Installing required packages..."
-    pip install -r requirements-backend.txt
+    python3 -m pip install -r requirements-backend.txt
 fi
 
 # Start Flask app
 echo "Starting Flask API server..."
-python app.py 
+python3 app.py 

@@ -13,65 +13,437 @@ import {
   Grid,
   Accordion,
   AccordionSummary,
-  AccordionDetails
+  AccordionDetails,
+  Tab,
+  Tabs,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  IconButton,
+  InputAdornment,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction
 } from '@mui/material';
 import MovieIcon from '@mui/icons-material/Movie';
 import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import ImageIcon from '@mui/icons-material/Image';
-import { generateScript, updateScript, generateVideo, generateScriptWithImage } from '../services/api.service';
-import ImageSelector from './ImageSelector';
+import SaveIcon from '@mui/icons-material/Save';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
+import SettingsIcon from '@mui/icons-material/Settings';
+import MicIcon from '@mui/icons-material/Mic';
+import DescriptionIcon from '@mui/icons-material/Description';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import { generateScript, updateScript, generateVideo, generateScriptWithImage, getPromptTemplates, savePromptTemplate, updatePromptTemplate, deletePromptTemplate, PromptTemplate, generateSpeech, getSpeechUrl } from '../services/api.service';
+import ImageGallery from './ImageGallery';
+import EditablePrompt, { 
+  hasEditableSections, 
+  createTemplateVariable 
+} from './EditablePrompt';
+
+// Define interfaces for prompts and presets
+interface Preset {
+  id: string;
+  name: string;
+  systemPrompt: string;
+  userPrompt: string;
+}
+
+interface ScriptOutput {
+  description: string;
+  narration: string;
+}
 
 interface PromptFormProps {
   imageId: string | undefined;
   onVideoGenerated: (videoId: string) => void;
   existingScript?: string | null;
+  onImageUploaded?: (imageId: string) => void;
 }
 
-export default function PromptForm({ imageId, onVideoGenerated, existingScript }: PromptFormProps) {
-  const [script, setScript] = useState('');
+// Helper function to parse script into description and narration
+const parseScript = (script: string): ScriptOutput => {
+  // Try to identify if the script already has sections
+  if (script.includes('视频描述:') && script.includes('旁白文本:')) {
+    const descriptionMatch = script.match(/视频描述:([\s\S]*?)(?=旁白文本:|$)/);
+    const narrationMatch = script.match(/旁白文本:([\s\S]*?)$/);
+    
+    return {
+      description: descriptionMatch ? descriptionMatch[1].trim() : '',
+      narration: narrationMatch ? narrationMatch[1].trim() : ''
+    };
+  } else if (script.includes('视频描述：') && script.includes('旁白文本：')) {  // 处理中文冒号
+    const descriptionMatch = script.match(/视频描述：([\s\S]*?)(?=旁白文本：|$)/);
+    const narrationMatch = script.match(/旁白文本：([\s\S]*?)$/);
+    
+    return {
+      description: descriptionMatch ? descriptionMatch[1].trim() : '',
+      narration: narrationMatch ? narrationMatch[1].trim() : ''
+    };
+  }
+  
+  // If no structured format is found, use the first paragraph as description 
+  // and the rest as narration
+  const paragraphs = script.split('\n\n').filter(p => p.trim());
+  if (paragraphs.length === 0) return { description: '', narration: '' };
+  
+  if (paragraphs.length === 1) {
+    // If there's only one paragraph, use it as both description and narration
+    return { description: paragraphs[0], narration: paragraphs[0] };
+  }
+  
+  return {
+    description: paragraphs[0],
+    narration: paragraphs.slice(1).join('\n\n')
+  };
+};
+
+// Default presets
+const DEFAULT_PRESETS: Preset[] = [
+  {
+    id: 'default-1',
+    name: '专业销售视频',
+    systemPrompt: '你是一位专业的广告文案撰写人员，擅长创作吸引人的{{product_type:科技产品}}销售视频脚本。',
+    userPrompt: '请根据图片内容，创作一段简短有力的产品销售脚本，突出产品的{{feature_focus:主要特点和价值}}。'
+  },
+  {
+    id: 'default-2',
+    name: '情感故事视频',
+    systemPrompt: '你是一位擅长讲述感人故事的文案创作者，能够将产品与{{emotion_type:日常生活}}情感体验相结合。',
+    userPrompt: '请根据图片内容创作一个情感化的故事脚本，将产品融入到能引起{{target_audience:年轻家庭}}共鸣的场景中。'
+  },
+  {
+    id: 'default-3',
+    name: '技术特性展示',
+    systemPrompt: '你是一位精通{{industry:科技}}行业的文案撰写人员，能够清晰解释复杂的产品特性。',
+    userPrompt: '请根据图片内容创作一个简洁明了的脚本，重点展示产品的{{tech_feature:技术特性}}和优势。'
+  }
+];
+
+export default function PromptForm({ imageId, onVideoGenerated, existingScript, onImageUploaded }: PromptFormProps) {
+  // State for prompts and generated script
+  const [systemPrompt, setSystemPrompt] = useState('你是一位专业的广告文案撰写人员，擅长创作吸引人的{{product_type:科技产品}}销售视频脚本。');
+  const [userPrompt, setUserPrompt] = useState('请根据图片内容，创作一段简短有力的产品销售脚本，突出产品的{{feature_focus:主要特点和价值}}。');
+  const [scriptOutput, setScriptOutput] = useState<ScriptOutput>({ description: '', narration: '' });
+  
+  // State for UI elements
   const [loading, setLoading] = useState(false);
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | false>('image');
-  const [selectedImageId, setSelectedImageId] = useState<number>();
+  const [expanded, setExpanded] = useState<string | false>('scriptInput');
+  const [selectedImageIds, setSelectedImageIds] = useState<number[]>([]);
+  const [tabValue, setTabValue] = useState(0);
+  const [presets, setPresets] = useState<Preset[]>(DEFAULT_PRESETS);
+  const [presetDialogOpen, setPresetDialogOpen] = useState(false);
+  const [currentPreset, setCurrentPreset] = useState<Preset | PromptTemplate | null>(null);
+  const [newPresetName, setNewPresetName] = useState('');
   
+  // 添加语音状态
+  const [isGeneratingVoice, setIsGeneratingVoice] = useState(false);
+  const [speechUrl, setSpeechUrl] = useState<string | null>(null);
+  const [audioPlayer, setAudioPlayer] = useState<HTMLAudioElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  
+  // Add new states for template management
+  const [onlineTemplates, setOnlineTemplates] = useState<PromptTemplate[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [processedSystemPrompt, setProcessedSystemPrompt] = useState('');
+  const [processedUserPrompt, setProcessedUserPrompt] = useState('');
+  const [editMode, setEditMode] = useState(false);
+  const [showTemplateHelp, setShowTemplateHelp] = useState(false);
+  
+  // 处理面板展开/收起
   const handleAccordionChange = (panel: string) => (event: React.SyntheticEvent, isExpanded: boolean) => {
     setExpanded(isExpanded ? panel : false);
   };
 
-  // 创意提示词
-  const [suggestions] = useState([
-    'Professional sales pitch',
-    'Product showcase',
-    'Emotional storytelling',
-    'Feature highlight',
-    'Customer testimonial style'
-  ]);
+  // 处理标签页切换
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
+
+  // Add a useEffect hook to reset selected images when project changes
+  useEffect(() => {
+    // Reset selected images when project changes
+    setSelectedImageIds([]);
+  }, [imageId]);
+
+  // 初始化音频播放器
+  useEffect(() => {
+    // 创建音频播放器实例
+    const player = new Audio();
+    
+    // 添加事件监听器
+    player.addEventListener('play', () => setIsPlaying(true));
+    player.addEventListener('pause', () => setIsPlaying(false));
+    player.addEventListener('ended', () => setIsPlaying(false));
+    
+    // 设置播放器实例
+    setAudioPlayer(player);
+    
+    // 清理函数
+    return () => {
+      if (player) {
+        player.pause();
+        player.src = '';
+        player.removeEventListener('play', () => setIsPlaying(true));
+        player.removeEventListener('pause', () => setIsPlaying(false));
+        player.removeEventListener('ended', () => setIsPlaying(false));
+      }
+    };
+  }, []);
+  
+  // 更新音频源
+  useEffect(() => {
+    if (audioPlayer && speechUrl) {
+      audioPlayer.src = speechUrl;
+    }
+  }, [audioPlayer, speechUrl]);
 
   // 显示已存在的脚本
   useEffect(() => {
-    if (existingScript && !script) {
-      setScript(existingScript);
+    if (existingScript && (!scriptOutput.description && !scriptOutput.narration)) {
+      const parsed = parseScript(existingScript);
+      setScriptOutput(parsed);
     }
-  }, [existingScript, script]);
+  }, [existingScript, scriptOutput.description, scriptOutput.narration]);
 
-  const handleScriptChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setScript(event.target.value);
+  // 处理文本输入更改
+  const handleSystemPromptChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSystemPrompt(event.target.value);
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
-    setScript(script ? `${script}, ${suggestion}` : suggestion);
+  const handleUserPromptChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setUserPrompt(event.target.value);
+  };
+
+  const handleDescriptionChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setScriptOutput(prev => ({ ...prev, description: event.target.value }));
+  };
+
+  const handleNarrationChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setScriptOutput(prev => ({ ...prev, narration: event.target.value }));
+  };
+
+  // 处理图片选择
+  const handleImagesSelected = (ids: number[]) => {
+    setSelectedImageIds(ids);
   };
   
-  const handleImageSelected = (id: number) => {
-    setSelectedImageId(id);
+  // 打开预设对话框
+  const handleOpenPresetDialog = (preset: Preset | PromptTemplate | null = null) => {
+    setCurrentPreset(preset);
+    if (preset) {
+      setNewPresetName(preset.name);
+      setSystemPrompt(preset.systemPrompt);
+      setUserPrompt(preset.userPrompt);
+    } else {
+      setNewPresetName('');
+    }
+    setPresetDialogOpen(true);
+  };
+
+  // 保存预设
+  const handleSavePreset = () => {
+    if (!newPresetName.trim()) {
+      return;
+    }
+
+    const newPreset: Preset = {
+      id: currentPreset?.id || `preset-${Date.now()}`,
+      name: newPresetName.trim(),
+      systemPrompt,
+      userPrompt
+    };
+
+    if (currentPreset) {
+      // Update existing preset
+      setPresets(prev => prev.map(p => p.id === currentPreset.id ? newPreset : p));
+    } else {
+      // Add new preset
+      setPresets(prev => [...prev, newPreset]);
+    }
+
+    setPresetDialogOpen(false);
+    
+    // TODO: Here we would also save to Redis on the backend
+    // savePresetToBackend(newPreset);
+  };
+
+  // 删除预设
+  const handleDeletePreset = (presetId: string) => {
+    setPresets(prev => prev.filter(p => p.id !== presetId));
+    
+    // TODO: Delete from backend
+    // deletePresetFromBackend(presetId);
+  };
+
+  // 使用预设
+  const handleUsePreset = (preset: Preset) => {
+    setSystemPrompt(preset.systemPrompt);
+    setUserPrompt(preset.userPrompt);
   };
   
+  // Add template fetch on component mount
+  useEffect(() => {
+    // Fetch templates from server
+    const fetchTemplates = async () => {
+      if (!imageId) return;
+      
+      setLoadingTemplates(true);
+      setTemplateError(null);
+      
+      try {
+        const response = await getPromptTemplates();
+        setOnlineTemplates(response.templates);
+      } catch (err) {
+        console.error('Failed to fetch templates:', err);
+        setTemplateError('无法加载提示词模板');
+      } finally {
+        setLoadingTemplates(false);
+      }
+    };
+    
+    fetchTemplates();
+  }, [imageId]);
+
+  // Update template management functions
+  // Save template
+  const handleSaveTemplate = async () => {
+    if (!newPresetName.trim()) {
+      return;
+    }
+    
+    const templateData = {
+      name: newPresetName.trim(),
+      systemPrompt,
+      userPrompt
+    };
+    
+    try {
+      setLoading(true);
+      
+      if (currentPreset && currentPreset.id.startsWith('preset-')) {
+        // Update existing local preset
+        const newPreset: Preset = {
+          id: currentPreset.id,
+          name: newPresetName.trim(),
+          systemPrompt,
+          userPrompt
+        };
+        
+        setPresets(prev => prev.map(p => p.id === currentPreset.id ? newPreset : p));
+      } else if (currentPreset && !currentPreset.id.startsWith('default-')) {
+        // Update online template
+        await updatePromptTemplate(currentPreset.id, templateData);
+        
+        // Refresh templates list
+        const response = await getPromptTemplates();
+        setOnlineTemplates(response.templates);
+      } else {
+        // Create new online template
+        const response = await savePromptTemplate(templateData);
+        
+        // Add to online templates
+        setOnlineTemplates(prev => [...prev, response.template]);
+      }
+      
+      setPresetDialogOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存模板失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete template
+  const handleDeleteTemplate = async (templateId: string) => {
+    try {
+      setLoading(true);
+      
+      if (templateId.startsWith('default-')) {
+        // Can't delete default templates
+        setError('无法删除默认模板');
+        return;
+      } else if (templateId.startsWith('preset-')) {
+        // Delete local preset
+        setPresets(prev => prev.filter(p => p.id !== templateId));
+      } else {
+        // Delete online template
+        await deletePromptTemplate(templateId);
+        
+        // Refresh templates list
+        const response = await getPromptTemplates();
+        setOnlineTemplates(response.templates);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除模板失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Use template - combine local presets and online templates
+  const handleUseTemplate = (template: Preset | PromptTemplate) => {
+    setSystemPrompt(template.systemPrompt);
+    setUserPrompt(template.userPrompt);
+    
+    // Check if template has editable sections
+    if (hasEditableSections(template.systemPrompt) || hasEditableSections(template.userPrompt)) {
+      setProcessedSystemPrompt(template.systemPrompt);
+      setProcessedUserPrompt(template.userPrompt);
+    } else {
+      setProcessedSystemPrompt('');
+      setProcessedUserPrompt('');
+    }
+  };
+
+  // Handle processed prompt changes from EditablePrompt
+  const handleProcessedSystemPromptChange = (prompt: string) => {
+    setProcessedSystemPrompt(prompt);
+  };
+
+  const handleProcessedUserPromptChange = (prompt: string) => {
+    setProcessedUserPrompt(prompt);
+  };
+
+  // Add variable to prompt (for template creation)
+  const handleAddVariable = (promptType: 'system' | 'user') => {
+    const variableName = prompt('输入变量名称 (例如: product_name)');
+    if (!variableName) return;
+    
+    const defaultValue = prompt('输入默认值 (可选)');
+    const variable = createTemplateVariable(variableName, defaultValue || '');
+    
+    if (promptType === 'system') {
+      setSystemPrompt(prev => prev + variable);
+    } else {
+      setUserPrompt(prev => prev + variable);
+    }
+  };
+
+  // Toggle edit mode for template creation
+  const handleToggleEditMode = () => {
+    setEditMode(prev => !prev);
+  };
+
+  // 生成脚本
   const handleGenerateScript = async () => {
     if (!imageId) {
       setError('请先上传产品图片');
+      return;
+    }
+    
+    if (selectedImageIds.length === 0) {
+      setError('请选择至少一张图片');
       return;
     }
     
@@ -79,18 +451,31 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript }
     setError(null);
     
     try {
+      // Create the prompt data with system and user prompts
+      const promptData = {
+        systemPrompt: `${processedSystemPrompt || systemPrompt}\n 请只输出印尼语文字！`,
+        userPrompt: `${processedUserPrompt || userPrompt}\n\n请将脚本分为两部分：\n1. 视频描述：简短介绍视频内容\n2. 旁白文本：详细的语音旁白内容，`
+      };
+      
       let result;
       
       // 如果有选中的图片ID，则使用该图片生成脚本
-      if (selectedImageId) {
-        result = await generateScriptWithImage(imageId, selectedImageId);
+      if (selectedImageIds.length > 0) {
+        // 将所有选中的图片ID传递给后端
+        console.log('selectedImageIds', selectedImageIds);
+        console.log('imageId', imageId);
+        result = await generateScriptWithImage(imageId, selectedImageIds, promptData);
       } else {
-        // 否则使用默认的图片生成脚本
-        result = await generateScript(imageId);
+        setError('请选择至少一张图片');
+        return;
       }
       
-      setScript(result.script);
-      setExpanded('script');
+      // Parse the generated script into description and narration
+      const parsed = parseScript(result.script);
+      setScriptOutput(parsed);
+      
+      // Open the output accordion
+      setExpanded('scriptOutput');
     } catch (err) {
       setError(err instanceof Error ? err.message : '文案生成失败');
     } finally {
@@ -98,16 +483,20 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript }
     }
   };
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    
+  // 生成视频
+  const handleGenerateVideo = async () => {
     if (!imageId) {
       setError('请先上传产品图片');
       return;
     }
     
-    if (!script.trim()) {
-      setError('请输入销售文案');
+    if (selectedImageIds.length === 0) {
+      setError('请选择至少一张图片');
+      return;
+    }
+    
+    if (!scriptOutput.description) {
+      setError('请先生成或输入视频描述');
       return;
     }
     
@@ -115,8 +504,12 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript }
     setError(null);
     
     try {
+      // Combine description and narration for saving to backend
+      // 保存到后端时使用前缀，这样后端可以正确解析
+      const fullScript = `视频描述:\n${scriptOutput.description}\n\n旁白文本:\n${scriptOutput.narration}`;
+      
       // 先更新脚本
-      await updateScript(imageId, { script: script.trim() });
+      await updateScript(imageId, { script: fullScript });
       
       // 然后生成视频
       const result = await generateVideo(imageId);
@@ -129,51 +522,349 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript }
     }
   };
 
+  // 生成语音旁白 (TTS)
+  const handleGenerateVoice = async () => {
+    if (!imageId) {
+      setError('请先上传产品图片');
+      return;
+    }
+    
+    if (!scriptOutput.narration) {
+      setError('请先生成或输入旁白文本');
+      return;
+    }
+    
+    setIsGeneratingVoice(true);
+    setError(null);
+    
+    try {
+      // 调用生成语音API - 直接传递narration内容，不需要前缀
+      const result = await generateSpeech(imageId, scriptOutput.narration);
+      
+      if (result.success && result.speech.path) {
+        // 获取完整URL
+        const fullSpeechUrl = getSpeechUrl(result.speech.path);
+        setSpeechUrl(fullSpeechUrl);
+        
+        // 成功消息
+        console.log('语音生成成功:', fullSpeechUrl);
+      } else {
+        setError('语音生成失败');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '语音生成失败');
+    } finally {
+      setIsGeneratingVoice(false);
+    }
+  };
+
+  // 播放/暂停音频
+  const handleTogglePlay = () => {
+    if (!audioPlayer || !speechUrl) return;
+    
+    if (isPlaying) {
+      audioPlayer.pause();
+    } else {
+      audioPlayer.play();
+    }
+  };
+
   return (
     <Box sx={{ width: '100%' }}>
       {imageId && (
+        <>
+          <Typography variant="subtitle1" sx={{ mb: 2 }}>
+            选择用于视频的图片 (可多选):
+          </Typography>
+          
+          <Box sx={{ mb: 3 }}>
+            <ImageGallery
+              projectId={imageId}
+              onImageUploaded={onImageUploaded || (() => {})}
+              onImageSelected={handleImagesSelected}
+              selectedImageIds={selectedImageIds}
+              multiSelect={true}
+            />
+          </Box>
+        </>
+      )}
+      
+      {/* Prompt Input Accordion */}
         <Accordion 
-          expanded={expanded === 'image'} 
-          onChange={handleAccordionChange('image')}
+        expanded={expanded === 'scriptInput'} 
+        onChange={handleAccordionChange('scriptInput')}
           sx={{ mb: 2 }}
         >
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Typography component="div" sx={{ display: 'flex', alignItems: 'center' }}>
-              <ImageIcon sx={{ mr: 1 }} />
-              选择图片
-              {selectedImageId && (
+            <SettingsIcon sx={{ mr: 1 }} />
+            提示词设置
+            {(systemPrompt !== DEFAULT_PRESETS[0].systemPrompt || 
+              userPrompt !== DEFAULT_PRESETS[0].userPrompt) && (
                 <Chip 
                   size="small" 
-                  label="已选择" 
-                  color="success" 
+                label="已修改" 
+                color="primary" 
                   sx={{ ml: 2 }} 
                 />
               )}
             </Typography>
           </AccordionSummary>
           <AccordionDetails>
-            <ImageSelector 
-              projectId={imageId} 
-              onImageSelected={handleImageSelected}
-              selectedImageId={selectedImageId}
-            />
+          <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+            <Tabs value={tabValue} onChange={handleTabChange} aria-label="prompt tabs">
+              <Tab label="提示词编辑" />
+              <Tab label="预设模板" />
+            </Tabs>
+          </Box>
+          
+          {/* 提示词编辑标签页 */}
+          {tabValue === 0 && (
+            <Box>
+              {editMode && (
+                <Paper 
+                  variant="outlined" 
+                  sx={{ 
+                    p: 1, 
+                    mb: 2, 
+                    bgcolor: 'info.light', 
+                    color: 'info.contrastText',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}
+                >
+                  <Typography variant="subtitle2" sx={{ display: 'flex', alignItems: 'center' }}>
+                    <EditIcon sx={{ mr: 1, fontSize: 'small' }} />
+                    模板编辑模式
+                  </Typography>
+                  <Button 
+                    size="small" 
+                    variant="outlined"
+                    color="inherit"
+                    onClick={() => setShowTemplateHelp(true)}
+                    startIcon={<HelpOutlineIcon />}
+                    sx={{ bgcolor: 'info.main' }}
+                  >
+                    变量说明
+                  </Button>
+                </Paper>
+              )}
+
+              <Typography variant="subtitle2" gutterBottom>
+                系统提示词 (AI角色设定)
+                {editMode && (
+                  <Button 
+                    size="small" 
+                    onClick={() => handleAddVariable('system')}
+                    sx={{ ml: 1 }}
+                  >
+                    插入变量
+                  </Button>
+                )}
+              </Typography>
+              <TextField
+                fullWidth
+                multiline
+                rows={2}
+                value={systemPrompt}
+                onChange={handleSystemPromptChange}
+                placeholder="定义AI的角色和行为方式..."
+                variant="outlined"
+                sx={{ mb: 2 }}
+              />
+              
+              {hasEditableSections(systemPrompt) && !editMode && (
+                <EditablePrompt
+                  promptTemplate={systemPrompt}
+                  onProcessedPromptChange={handleProcessedSystemPromptChange}
+                />
+              )}
+              
+              <Typography variant="subtitle2" gutterBottom>
+                用户提示词 (具体要求)
+                {editMode && (
+                  <Button 
+                    size="small" 
+                    onClick={() => handleAddVariable('user')}
+                    sx={{ ml: 1 }}
+                  >
+                    插入变量
+                  </Button>
+                )}
+              </Typography>
+              <TextField
+                fullWidth
+                multiline
+                rows={3}
+                value={userPrompt}
+                onChange={handleUserPromptChange}
+                placeholder="描述你希望AI生成的内容和风格..."
+                variant="outlined"
+                sx={{ mb: 2 }}
+              />
+              
+              {hasEditableSections(userPrompt) && !editMode && (
+                <EditablePrompt
+                  promptTemplate={userPrompt}
+                  onProcessedPromptChange={handleProcessedUserPromptChange}
+                />
+              )}
+              
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Box>
+                  <Button 
+                    variant="outlined"
+                    startIcon={<SaveIcon />}
+                    onClick={() => handleOpenPresetDialog()}
+                  >
+                    保存为模板
+                  </Button>
+                  <Button
+                    variant="text"
+                    onClick={handleToggleEditMode}
+                    sx={{ ml: 1 }}
+                  >
+                    {editMode ? '完成编辑' : '模板编辑'}
+                  </Button>
+                </Box>
+                
+                <Button
+                  variant="contained"
+                  onClick={handleGenerateScript}
+                  disabled={!imageId || isGeneratingScript || selectedImageIds.length === 0}
+                  startIcon={isGeneratingScript ? <CircularProgress size={20} /> : <VolumeUpIcon />}
+                >
+                  {isGeneratingScript ? '生成中...' : '生成脚本'}
+                </Button>
+              </Box>
+            </Box>
+          )}
+          
+          {/* 预设模板标签页 */}
+          {tabValue === 1 && (
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                本地预设
+              </Typography>
+              <List>
+                {presets.map((preset) => (
+                  <ListItem 
+                    key={preset.id}
+                    sx={{ 
+                      mb: 1, 
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 1
+                    }}
+                  >
+                    <ListItemText
+                      primary={preset.name}
+                      secondary={hasEditableSections(preset.systemPrompt) ? '包含可编辑变量' : preset.systemPrompt.substring(0, 60) + '...'}
+                      sx={{ cursor: 'pointer' }}
+                      onClick={() => handleUsePreset(preset)}
+                    />
+                    <ListItemSecondaryAction>
+                      <IconButton 
+                        edge="end" 
+                        aria-label="edit"
+                        onClick={() => handleOpenPresetDialog(preset)}
+                      >
+                        <EditIcon />
+                      </IconButton>
+                      {!preset.id.startsWith('default-') && (
+                        <IconButton 
+                          edge="end" 
+                          aria-label="delete"
+                          onClick={() => handleDeleteTemplate(preset.id)}
+                          sx={{ ml: 1 }}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      )}
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                ))}
+              </List>
+              
+              <Typography variant="subtitle2" sx={{ mb: 1, mt: 3 }}>
+                在线模板
+                {loadingTemplates && <CircularProgress size={16} sx={{ ml: 1 }} />}
+              </Typography>
+              
+              {templateError && (
+                <Typography color="error" variant="body2" sx={{ mb: 1 }}>
+                  {templateError}
+                </Typography>
+              )}
+              
+              <List>
+                {onlineTemplates.map((template) => (
+                  <ListItem 
+                    key={template.id}
+                    sx={{ 
+                      mb: 1, 
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                      bgcolor: 'action.hover'
+                    }}
+                  >
+                    <ListItemText
+                      primary={template.name}
+                      secondary={hasEditableSections(template.systemPrompt) ? '包含可编辑变量' : template.systemPrompt.substring(0, 60) + '...'}
+                      sx={{ cursor: 'pointer' }}
+                      onClick={() => handleUsePreset(template)}
+                    />
+                    <ListItemSecondaryAction>
+                      <IconButton 
+                        edge="end" 
+                        aria-label="edit"
+                        onClick={() => handleOpenPresetDialog(template)}
+                      >
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton 
+                        edge="end" 
+                        aria-label="delete"
+                        onClick={() => handleDeleteTemplate(template.id)}
+                        sx={{ ml: 1 }}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                ))}
+              </List>
+              
+              <Button
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={() => handleOpenPresetDialog()}
+                sx={{ mt: 2 }}
+                disabled={loadingTemplates}
+              >
+                创建新模板
+              </Button>
+            </Box>
+          )}
           </AccordionDetails>
         </Accordion>
-      )}
       
+      {/* Script Output Accordion */}
       <Accordion 
-        expanded={expanded === 'script'} 
-        onChange={handleAccordionChange('script')}
+        expanded={expanded === 'scriptOutput'} 
+        onChange={handleAccordionChange('scriptOutput')}
         sx={{ mb: 2 }}
       >
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
           <Typography component="div" sx={{ display: 'flex', alignItems: 'center' }}>
             <RecordVoiceOverIcon sx={{ mr: 1 }} />
-            销售文案
-            {script && (
+            生成内容
+            {(scriptOutput.description || scriptOutput.narration) && (
               <Chip 
                 size="small" 
-                label="已添加" 
+                label="已生成" 
                 color="success" 
                 sx={{ ml: 2 }} 
               />
@@ -181,107 +872,179 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript }
           </Typography>
         </AccordionSummary>
         <AccordionDetails>
-          <form onSubmit={handleSubmit}>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+              <DescriptionIcon sx={{ mr: 1, fontSize: 'small' }} />
+              视频描述
+            </Typography>
+            <TextField
+              fullWidth
+              multiline
+              rows={3}
+              value={scriptOutput.description}
+              onChange={handleDescriptionChange}
+              placeholder="视频的总体描述..."
+              variant="outlined"
+              sx={{ mb: 2 }}
+            />
+            
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Button
+                variant="contained"
+                      color="primary"
+                onClick={handleGenerateVideo}
+                disabled={!imageId || !scriptOutput.description || loading || selectedImageIds.length === 0}
+                startIcon={loading ? <CircularProgress size={20} /> : <MovieIcon />}
+              >
+                {loading ? '生成中...' : '生成视频'}
+              </Button>
+            </Box>
+          </Box>
+          
+          <Divider sx={{ my: 2 }} />
+          
+          <Box>
+            <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+              <MicIcon sx={{ mr: 1, fontSize: 'small' }} />
+              旁白文本
+            </Typography>
             <TextField
               fullWidth
               multiline
               rows={4}
-              label="输入销售脚本"
+              value={scriptOutput.narration}
+              onChange={handleNarrationChange}
+              placeholder="配音旁白文本..."
               variant="outlined"
-              value={script}
-              onChange={handleScriptChange}
-              placeholder="编写销售文案或使用AI生成..."
-              disabled={!imageId || loading || isGeneratingScript}
               sx={{ mb: 2 }}
             />
             
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-              <Box>
-                <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                  创意提示:
-                </Typography>
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {suggestions.map((suggestion) => (
-                    <Chip
-                      key={suggestion}
-                      label={suggestion}
-                      onClick={() => handleSuggestionClick(suggestion)}
-                      color="primary"
-                      variant="outlined"
-                      clickable
-                      disabled={!imageId || loading}
-                      size="small"
-                      sx={{ transition: 'all 0.2s ease' }}
-                    />
-                  ))}
-                </Box>
-              </Box>
-              
-              <Button 
-                onClick={handleGenerateScript}
-                disabled={!imageId || isGeneratingScript}
-                variant="outlined"
-                size="small"
-                startIcon={isGeneratingScript ? <CircularProgress size={16} /> : <RecordVoiceOverIcon />}
-              >
-                {isGeneratingScript ? '生成中...' : 'AI生成文案'}
-              </Button>
-            </Box>
-            
-            {script && (
-              <Box sx={{ mt: 3 }}>
-                <Typography variant="subtitle2" color="primary">文案预览</Typography>
-                <Paper 
-                  elevation={0} 
-                  sx={{ 
-                    p: 2, 
-                    backgroundColor: 'grey.50', 
-                    borderRadius: 1,
-                    position: 'relative',
-                    overflow: 'hidden'
-                  }}
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+              {speechUrl && (
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  onClick={handleTogglePlay}
+                  startIcon={isPlaying ? <VolumeUpIcon /> : <PlayArrowIcon />}
+                  sx={{ mr: 2 }}
                 >
-                  <Typography variant="body2">
-                    {script}
-                  </Typography>
-                  
-                  <Box 
-                    sx={{ 
-                      position: 'absolute',
-                      top: 8,
-                      right: 8,
-                      backgroundColor: 'rgba(255,255,255,0.8)',
-                      borderRadius: '50%',
-                      p: 0.5
-                    }}
-                  >
-                    <VolumeUpIcon fontSize="small" color="action" />
+                  {isPlaying ? '暂停' : '播放'}
+                </Button>
+              )}
+              <Button
+                variant="contained"
+                color="secondary"
+                onClick={handleGenerateVoice}
+                disabled={!scriptOutput.narration || isGeneratingVoice}
+                startIcon={isGeneratingVoice ? <CircularProgress size={20} /> : <RecordVoiceOverIcon />}
+              >
+                {isGeneratingVoice ? '生成中...' : '生成语音'}
+              </Button>
                   </Box>
-                </Paper>
               </Box>
-            )}
-          </form>
-          
-          {error && (
-            <Typography color="error" variant="body2" sx={{ mt: 2 }}>
-              {error}
-            </Typography>
-          )}
         </AccordionDetails>
       </Accordion>
       
-      <Button
-        type="submit"
-        variant="contained"
-        color="primary"
+      {error && (
+        <Typography color="error" variant="body2" sx={{ mb: 2 }}>
+          {error}
+        </Typography>
+      )}
+      
+      {/* Preset Save Dialog */}
+      <Dialog open={presetDialogOpen} onClose={() => setPresetDialogOpen(false)}>
+        <DialogTitle>{currentPreset ? '编辑预设' : '保存预设'}</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="预设名称"
+            type="text"
+            fullWidth
+            variant="outlined"
+            value={newPresetName}
+            onChange={(e) => setNewPresetName(e.target.value)}
+            sx={{ mb: 2, mt: 1 }}
+          />
+          
+          <Typography variant="subtitle2" gutterBottom>
+            系统提示词
+          </Typography>
+          <TextField
+            fullWidth
+            multiline
+            rows={2}
+            value={systemPrompt}
+            onChange={handleSystemPromptChange}
+            variant="outlined"
+            sx={{ mb: 2 }}
+          />
+          
+          <Typography variant="subtitle2" gutterBottom>
+            用户提示词
+          </Typography>
+          <TextField
         fullWidth
-        disabled={!imageId || loading || !script.trim()}
-        startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <MovieIcon />}
-        sx={{ py: 1.5 }}
-        onClick={handleSubmit}
+            multiline
+            rows={3}
+            value={userPrompt}
+            onChange={handleUserPromptChange}
+            variant="outlined"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPresetDialogOpen(false)}>取消</Button>
+          <Button onClick={handleSaveTemplate} variant="contained" disabled={!newPresetName.trim()}>
+            保存
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add a help dialog component for template variables */}
+      <Dialog 
+        open={showTemplateHelp} 
+        onClose={() => setShowTemplateHelp(false)}
+        maxWidth="md"
       >
-        {loading ? '生成中...' : '生成销售视频'}
+        <DialogTitle>提示词模板变量说明</DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" paragraph>
+            您可以在提示词中使用变量，格式为：<code>{'{{变量名:默认值}}'}</code>
+          </Typography>
+          
+          <Typography variant="subtitle2" gutterBottom>
+            示例：
+          </Typography>
+          
+          <Paper variant="outlined" sx={{ p: 2, mb: 2, bgcolor: 'background.default' }}>
+            <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+              {`你是一位专业的{{industry:科技}}行业广告文案撰写人员，擅长为{{target:中小企业}}创作吸引人的产品销售视频。`}
+            </Typography>
+          </Paper>
+          
+          <Typography variant="body1" paragraph>
+            当使用这个模板时，用户将能够修改 "industry" 和 "target" 的值，无需编辑整个提示词。
+          </Typography>
+          
+          <Typography variant="subtitle2" gutterBottom>
+            变量格式规则：
+          </Typography>
+          
+          <ul>
+            <li>变量名只能包含字母、数字和下划线</li>
+            <li>默认值可选，如果不提供则为空</li>
+            <li>变量名将自动转换为易读的标签（如 product_name 变为 "Product Name"）</li>
+          </ul>
+          
+          <Button 
+            variant="outlined" 
+            onClick={() => setShowTemplateHelp(false)}
+            sx={{ mt: 2 }}
+          >
+            关闭
       </Button>
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 } 

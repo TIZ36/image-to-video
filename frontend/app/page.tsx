@@ -13,19 +13,21 @@ import {
   ThemeProvider,
   createTheme,
   useMediaQuery,
-  Divider
+  Divider,
+  Chip
 } from '@mui/material';
-import ImageUploader from './components/ImageUploader';
+import ImageGallery from './components/ImageGallery';
 import PromptForm from './components/PromptForm';
 import VideoPlayer from './components/VideoPlayer';
 import ProjectList from './components/ProjectList';
 import Header from './components/Header';
 import { useLanguage } from './contexts/LanguageContext';
-import { listProjects, getProject } from './services/api.service';
-import { Project } from './services/api.service';
+import { listProjects, getProject, Project, getVideoUrl } from './services/api.service';
 import ImageIcon from '@mui/icons-material/Image';
 import DescriptionIcon from '@mui/icons-material/Description';
 import MovieIcon from '@mui/icons-material/Movie';
+import InsertPhotoIcon from '@mui/icons-material/InsertPhoto';
+import SpeechPlayer from './components/SpeechPlayer';
 
 // Create Material UI theme
 const theme = createTheme({
@@ -73,7 +75,7 @@ const theme = createTheme({
 });
 
 // Main application steps
-const steps = ['Upload Image', 'Add Description', 'Get Sales Video'];
+const steps = ['Upload & Select Image', 'Create Sales Script', 'Get Sales Video'];
 
 export default function Home() {
   const { t } = useLanguage();
@@ -320,40 +322,36 @@ export default function Home() {
                       gap: 3,
                       width: { xs: '100%', lg: (selectedProject?.video?.url || videoUrl) ? '60%' : '100%' }
                     }}>
-                      {/* 产品图片上传区 */}
+                      {/* Combined Image & Copy Section */}
                       <Paper elevation={1} sx={{ p: 3, borderRadius: 2 }}>
-                        <Typography variant="h6" gutterBottom>
-                          <ImageIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
-                          {t('product.image')}
-                        </Typography>
-                        <Divider sx={{ my: 2 }} />
-                        <ImageUploader 
-                          onImageUploaded={handleImageUploaded} 
-                          projectId={projectId}
-                          existingImagePath={selectedProject?.image_path}
-                        />
-                      </Paper>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                          <Typography variant="h6">
+                            <ImageIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
+                            {t('product.media')}
+                          </Typography>
+                          <Chip 
+                            label={selectedProject?.image_path ? t('images.added') : t('upload.images')} 
+                            color={selectedProject?.image_path ? "success" : "default"}
+                            size="small"
+                          />
+                        </Box>
+                        <Divider sx={{ mb: 3 }} />
 
-                      {/* 营销文案编辑区 */}
-                      <Paper 
-                        elevation={1} 
-                        sx={{ 
-                          p: 3, 
-                          borderRadius: 2,
-                          opacity: selectedProject?.image_path ? 1 : 0.6 
-                        }}
-                      >
-                        <Typography variant="h6" gutterBottom>
-                          <DescriptionIcon sx={{ mr: 1, verticalAlign: 'middle', color: 'primary.main' }} />
-                          {t('marketing.copy')}
-                        </Typography>
-                        <Divider sx={{ my: 2 }} />
                         <PromptForm 
+                          key={`prompt-form-${projectId || 'new'}`}
                           imageId={projectId} 
                           onVideoGenerated={handleVideoGenerated}
-                          existingScript={selectedProject?.script} 
+                          existingScript={selectedProject?.script}
+                          onImageUploaded={handleImageUploaded} 
                         />
                       </Paper>
+                      
+                      {/* Speech Player */}
+                      {selectedProject?.script && (
+                        <SpeechPlayer 
+                          projectId={projectId} 
+                        />
+                      )}
                     </Box>
 
                     {/* 右侧视频展示区 */}

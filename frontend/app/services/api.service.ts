@@ -81,7 +81,45 @@ export interface VideoStatus {
   error?: string;
 }
 
-// Base API URL - Replace with your actual API endpoint
+// Add new interface for script generation request with prompts
+export interface GenerateScriptRequest {
+  systemPrompt?: string;
+  userPrompt?: string;
+}
+
+// Add new interfaces for prompt templates with editable fields
+export interface PromptTemplate {
+  id: string;
+  name: string;
+  systemPrompt: string;
+  userPrompt: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SaveTemplateRequest {
+  name: string;
+  systemPrompt: string;
+  userPrompt: string;
+}
+
+export interface UpdateTemplateRequest {
+  name?: string;
+  systemPrompt?: string;
+  userPrompt?: string;
+}
+
+export interface TemplateResponse {
+  success: boolean;
+  template: PromptTemplate;
+}
+
+export interface TemplatesListResponse {
+  success: boolean;
+  templates: PromptTemplate[];
+}
+
+// Define API base URL
 const API_BASE_URL = 'http://localhost:8888/api';
 
 /**
@@ -161,9 +199,13 @@ export async function uploadImage(projectId: string, file: File): Promise<Upload
  * @param projectId The ID of the project
  * @returns A promise with the generated script
  */
-export async function generateScript(projectId: string): Promise<GenerateScriptResponse> {
+export async function generateScript(projectId: string, promptData?: GenerateScriptRequest): Promise<GenerateScriptResponse> {
   const response = await fetch(`${API_BASE_URL}/projects/${projectId}/script/generate`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: promptData ? JSON.stringify(promptData) : undefined,
   });
 
   if (!response.ok) {
@@ -276,16 +318,207 @@ export async function getProjectImages(projectId: string): Promise<GetProjectIma
 /**
  * Generate a marketing script for a project using LLM with a specific image
  * @param projectId The ID of the project
- * @param imageId The ID of the image to use
+ * @param imageId The ID of the image to use, or array of image IDs
  * @returns A promise with the generated script
  */
-export async function generateScriptWithImage(projectId: string, imageId: number): Promise<GenerateScriptResponse> {
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/script/generate?image_id=${imageId}`, {
+export async function generateScriptWithImage(
+  projectId: string, 
+  imageId: number | number[], 
+  promptData?: GenerateScriptRequest
+): Promise<GenerateScriptResponse> {
+  // 处理单个图片ID或图片ID数组
+  const imageParam = Array.isArray(imageId) 
+    ? imageId.map(id => `image_id=${id}`).join('&') 
+    : `image_id=${imageId}`;
+  
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/script/generate?${imageParam}`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: promptData ? JSON.stringify(promptData) : undefined,
   });
 
   if (!response.ok) {
     throw new Error(`Script generation failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Get all prompt templates
+ * @returns A promise with all templates
+ */
+export async function getPromptTemplates(): Promise<TemplatesListResponse> {
+  const response = await fetch(`${API_BASE_URL}/templates`);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch templates: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Save a new prompt template
+ * @param data Template data
+ * @returns A promise with the created template
+ */
+export async function savePromptTemplate(data: SaveTemplateRequest): Promise<TemplateResponse> {
+  const response = await fetch(`${API_BASE_URL}/templates`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Template creation failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Update an existing prompt template
+ * @param templateId The ID of the template
+ * @param data The updated template data
+ * @returns A promise with the updated template
+ */
+export async function updatePromptTemplate(templateId: string, data: UpdateTemplateRequest): Promise<TemplateResponse> {
+  const response = await fetch(`${API_BASE_URL}/templates/${templateId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Template update failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Delete a prompt template
+ * @param templateId The ID of the template to delete
+ * @returns A promise with the delete response
+ */
+export async function deletePromptTemplate(templateId: string): Promise<{success: boolean; message: string}> {
+  const response = await fetch(`${API_BASE_URL}/templates/${templateId}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Template deletion failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Generate speech for a project
+ * @param projectId The ID of the project
+ * @param text Optional text to use for speech generation
+ * @param language Optional language code
+ * @returns A promise with the speech generation response
+ */
+export async function generateSpeech(
+  projectId: string, 
+  text?: string,
+  language: string = 'zh-CN'
+): Promise<{success: boolean; speech: {path: string, language: string}}> {
+  const url = `${API_BASE_URL}/projects/${projectId}/speech/generate${language ? `?language=${language}` : ''}`;
+  
+  // 处理文本，确保不包含"旁白文本:"前缀
+  let processedText = text;
+  if (processedText) {
+    if (processedText.startsWith('旁白文本:')) {
+      processedText = processedText.replace('旁白文本:', '').trim();
+    } else if (processedText.startsWith('旁白文本：')) {
+      processedText = processedText.replace('旁白文本：', '').trim();
+    }
+  }
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: processedText ? JSON.stringify({ text: processedText }) : undefined,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Speech generation failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Get all speeches for a project
+ * @param projectId The ID of the project
+ * @returns A promise with the list of speeches
+ */
+export async function getProjectSpeeches(projectId: string): Promise<{success: boolean; speeches: Array<{path: string, created_at: string, language: string}>}> {
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/speech`);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch project speeches: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Delete all speeches for a project
+ * @param projectId The ID of the project
+ * @returns A promise with the delete response
+ */
+export async function deleteProjectSpeeches(projectId: string): Promise<{success: boolean; message: string}> {
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/speech`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete project speeches: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Get the full speech URL
+ * @param speechPath The speech path from the project
+ * @returns The full URL to the speech file
+ */
+export function getSpeechUrl(speechPath: string): string {
+  // If it's already a full URL (starts with http), return as is
+  if (speechPath.startsWith('http')) {
+    return speechPath;
+  }
+  
+  // Otherwise, it's a relative path, so prefix with API_BASE_URL
+  return `${API_BASE_URL}${speechPath.startsWith('/') ? '' : '/'}${speechPath}`;
+}
+
+/**
+ * Delete a specific image from a project
+ * @param projectId The ID of the project
+ * @param imageId The ID of the image to delete
+ * @returns A promise with the delete response
+ */
+export async function deleteProjectImage(projectId: string, imageId: number): Promise<{success: boolean; message: string; images: ProjectImage[]}> {
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/images/${imageId}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete image: ${response.statusText}`);
   }
 
   return response.json();

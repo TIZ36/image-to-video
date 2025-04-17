@@ -56,6 +56,18 @@ const translations: Translations = {
     'load.failed': 'Failed to load project images',
     'upload.failed': 'Upload failed',
     'image.only': 'Only image files can be uploaded',
+    'delete.failed': 'Failed to delete image',
+    
+    // Speech player
+    'speech.player': 'Voice Narration',
+    'speech.generate': 'Generate Voice',
+    'speech.generating': 'Generating...',
+    'speech.play.failed': 'Failed to play audio',
+    'speech.generate.failed': 'Failed to generate speech',
+    'speech.load.failed': 'Failed to load speech files',
+    'speech.missing.text': 'No script text available',
+    'speech.latest': 'Latest generated',
+    'speech.not.found': 'No voice narration available',
     
     // Project related
     'new.project': 'New Product Display Project',
@@ -65,11 +77,14 @@ const translations: Translations = {
     'app.title': 'Product Sales Video Generator',
     'app.subtitle': 'Turn your product images into compelling sales videos with AI',
     'product.image': 'Product Image',
+    'product.media': 'Product Media',
     'marketing.copy': 'Marketing Copy',
     'sales.video': 'Sales Video',
     'loading.project': 'Loading project...',
     'select.create.project': 'Select or create a project',
     'project.will.display': 'Your selected project will display here',
+    'images.added': 'Images Added',
+    'upload.images': 'Upload Images',
   },
   zh: {
     // Common
@@ -89,6 +104,18 @@ const translations: Translations = {
     'load.failed': '加载项目图片失败',
     'upload.failed': '上传失败',
     'image.only': '只能上传图片文件',
+    'delete.failed': '删除图片失败',
+    
+    // Speech player
+    'speech.player': '语音旁白',
+    'speech.generate': '生成语音',
+    'speech.generating': '生成中...',
+    'speech.play.failed': '播放音频失败',
+    'speech.generate.failed': '生成语音失败',
+    'speech.load.failed': '加载语音文件失败',
+    'speech.missing.text': '没有可用的脚本文本',
+    'speech.latest': '最新生成',
+    'speech.not.found': '暂无语音旁白',
     
     // Project related
     'new.project': '新产品展示项目',
@@ -98,11 +125,14 @@ const translations: Translations = {
     'app.title': '产品销售视频生成器',
     'app.subtitle': '使用AI将您的产品图片转换为引人注目的销售视频',
     'product.image': '产品图片',
+    'product.media': '产品媒体',
     'marketing.copy': '营销文案',
     'sales.video': '销售视频',
     'loading.project': '项目加载中...',
     'select.create.project': '选择项目或创建新项目',
     'project.will.display': '您选择的项目将在此处显示',
+    'images.added': '已添加图片',
+    'upload.images': '上传图片',
   },
   id: {
     // Common
@@ -122,6 +152,18 @@ const translations: Translations = {
     'load.failed': 'Gagal memuat gambar proyek',
     'upload.failed': 'Gagal mengunggah',
     'image.only': 'Hanya file gambar yang dapat diunggah',
+    'delete.failed': 'Gagal menghapus gambar',
+    
+    // Speech player
+    'speech.player': 'Narasi Suara',
+    'speech.generate': 'Hasilkan Suara',
+    'speech.generating': 'Menghasilkan...',
+    'speech.play.failed': 'Gagal memutar audio',
+    'speech.generate.failed': 'Gagal menghasilkan suara',
+    'speech.load.failed': 'Gagal memuat file suara',
+    'speech.missing.text': 'Tidak ada teks naskah tersedia',
+    'speech.latest': 'Terbaru dihasilkan',
+    'speech.not.found': 'Tidak ada narasi suara tersedia',
     
     // Project related
     'new.project': 'Proyek Tampilan Produk Baru',
@@ -131,11 +173,14 @@ const translations: Translations = {
     'app.title': 'Generator Video Penjualan Produk',
     'app.subtitle': 'Ubah gambar produk Anda menjadi video penjualan yang menarik dengan AI',
     'product.image': 'Gambar Produk',
+    'product.media': 'Media Produk',
     'marketing.copy': 'Materi Pemasaran',
     'sales.video': 'Video Penjualan',
     'loading.project': 'Memuat proyek...',
     'select.create.project': 'Pilih atau buat proyek',
     'project.will.display': 'Proyek yang Anda pilih akan ditampilkan di sini',
+    'images.added': 'Gambar Ditambahkan',
+    'upload.images': 'Unggah Gambar',
   }
 };
 

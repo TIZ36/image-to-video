@@ -9,10 +9,13 @@ from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import time
 from datetime import datetime
+import traceback
+import tempfile
 
 # Import the modules we created
 from llm_client import get_llm_client
 from video_generator import get_video_generator
+from tts_client import get_tts_client
 
 # Load environment variables
 load_dotenv()
@@ -42,12 +45,27 @@ VIDEO_FOLDER = os.getenv('VIDEO_FOLDER', os.path.join(os.path.dirname(os.path.ab
 if not os.path.exists(VIDEO_FOLDER):
     os.makedirs(VIDEO_FOLDER)
 
+# Configure speech output folder
+SPEECH_FOLDER = os.getenv('SPEECH_FOLDER', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'speeches'))
+if not os.path.exists(SPEECH_FOLDER):
+    os.makedirs(SPEECH_FOLDER)
+
 # Allowed file extensions
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
-# Initialize LLM and video generator clients
+# Initialize LLM, video generator and TTS clients
 llm_client = None
 video_generator = None
+tts_client = None
+
+# Video output path
+VIDEO_OUTPUT_PATH = os.getenv("VIDEO_OUTPUT_PATH", os.path.join(os.path.dirname(__file__), "..", "videos"))
+# Ensure video output directory exists
+os.makedirs(VIDEO_OUTPUT_PATH, exist_ok=True)
+
+# Test files directory for temporary test uploads
+TEST_FILES_DIR = os.path.join(tempfile.gettempdir(), "image_to_video_test")
+os.makedirs(TEST_FILES_DIR, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -342,7 +360,7 @@ def generate_script(project_id):
     """Generate a marketing script based on the project's image using LLM"""
     global llm_client
     if llm_client is None:
-        llm_client = get_llm_client()
+        llm_client = get_llm_client(redis_client)
     
     project = get_project(project_id)
     
@@ -350,28 +368,40 @@ def generate_script(project_id):
         return jsonify({"error": "Project not found"}), 404
     
     # 获取要使用的图片路径
-    image_path = None
+    image_paths = []
     
-    # 检查是否指定了特定图片
-    image_id = request.args.get('image_id')
-    if image_id:
-        try:
-            image_id = int(image_id)
-            image_path = f"/api/images/{project_id}-image-{image_id}"
-        except ValueError:
-            return jsonify({"error": "Invalid image ID"}), 400
+    # 检查是否指定了特定图片 - 支持多个image_id
+    image_ids = request.args.getlist('image_id')
+    if image_ids:
+        for img_id in image_ids:
+            try:
+                img_id = int(img_id)
+                image_path = f"/api/images/{project_id}-image-{img_id}"
+                image_paths.append(image_path)
+            except ValueError:
+                return jsonify({"error": f"Invalid image ID: {img_id}"}), 400
     elif 'images' in project and project['images']:
         # 使用第一张图片
-        image_path = project['images'][0]['path']
+        image_paths.append(project['images'][0]['path'])
     elif project['image_path']:
         # 兼容旧版本
-        image_path = project['image_path']
+        image_paths.append(project['image_path'])
     else:
         return jsonify({"error": "No image has been uploaded for this project"}), 400
     
+    # 确保至少有一张图片
+    if not image_paths:
+        return jsonify({"error": "No valid images selected"}), 400
+    
     try:
-        # 获取图片数据
-        image_data = None
+        # 获取提示词数据
+        prompt_data = request.json or {}
+        system_prompt = prompt_data.get('systemPrompt', '')
+        user_prompt = prompt_data.get('userPrompt', '')
+        
+        # 处理所有图片并生成脚本
+        # 暂时使用第一张图片，后续可扩展为使用多张图片
+        image_path = image_paths[0]
         
         # 处理新格式的图片路径
         if '-image-' in image_path:
@@ -398,8 +428,6 @@ def generate_script(project_id):
                         base64_data = data_url
                     
                     # 创建临时文件
-                    import tempfile
-                    
                     with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
                         try:
                             temp_file.write(base64.b64decode(base64_data))
@@ -408,11 +436,14 @@ def generate_script(project_id):
                         temp_image_path = temp_file.name
                     
                     try:
-                        # 调用LLM生成脚本
+                        # 调用LLM生成脚本，传递提示词
                         script = llm_client.generate_script(
-                            temp_image_path,
+                            project_id,
+                            img_id,
                             project['name'],
-                            project.get('description', '')
+                            project.get('description', ''),
+                            system_prompt=system_prompt,
+                            user_prompt=user_prompt
                         )
                     finally:
                         # 清理临时文件
@@ -446,8 +477,6 @@ def generate_script(project_id):
                     base64_data = data_url
                 
                 # 创建临时文件
-                import tempfile
-                
                 with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
                     try:
                         temp_file.write(base64.b64decode(base64_data))
@@ -456,11 +485,14 @@ def generate_script(project_id):
                     temp_image_path = temp_file.name
                 
                 try:
-                    # 调用LLM生成脚本
+                    # 调用LLM生成脚本，传递提示词
                     script = llm_client.generate_script(
-                        temp_image_path,
+                        project_id,
+                        img_id,
                         project['name'],
-                        project.get('description', '')
+                        project.get('description', ''),
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt
                     )
                 finally:
                     # 清理临时文件
@@ -470,12 +502,8 @@ def generate_script(project_id):
             else:
                 return jsonify({"error": "Invalid image path format"}), 400
         else:
-            # 使用本地文件路径(兼容旧版本)
-            script = llm_client.generate_script(
-                image_path,
-                project['name'],
-                project.get('description', '')
-            )
+            # 这种情况不应该发生，因为所有的图片路径都应该以"/api/"开头
+            return jsonify({"error": "Invalid image path format"}), 400
         
         # 更新项目的脚本
         project['script'] = script
@@ -514,6 +542,7 @@ def update_script(project_id):
 
 @app.route('/api/projects/<project_id>/video/generate', methods=['POST'])
 def generate_video(project_id):
+
     """Generate a sales video based on the project's image and script"""
     global video_generator
     if video_generator is None:
@@ -524,26 +553,75 @@ def generate_video(project_id):
     if not project:
         return jsonify({"error": "Project not found"}), 404
     
-    if not project['image_path']:
+    # 检查是否有图片
+    if not project.get('images') and not project.get('image_path'):
         return jsonify({"error": "No image has been uploaded for this project"}), 400
     
-    if not project['script']:
+    # 检查是否有脚本
+    if not project.get('script'):
         return jsonify({"error": "No script has been created for this project"}), 400
     
+
+    print(f"Generating video for project: {project_id}")
+    print(f"Project script: {project['script']}")
+    print(f"Project images: {project['images']}")
+    print(f"Project image_path: {project['image_path']}")
+
+    script = project['script']
+
+    
+    # 提取脚本文本 - 视频描述部分用于生成视频
+    description = ""
+    narration = ""
+
+    if script:
+        parts = script.split("视频描述:", 1)
+        print(f"Parts: {parts}")
+        if len(parts) > 1:
+            allscripts = parts[1].strip()
+        parts2 = allscripts.split("旁白文本:", 1)
+        if len(parts2) > 1:
+            description = parts2[0].strip()
+            narration = parts2[1].strip()
+
+    print(f"Extracted description: {description}")
+    print(f"Extracted narration: {narration}")
+
     try:
-        # Get project-specific video folder
+        # 获取项目特定的视频文件夹
         project_video_folder = os.path.join(VIDEO_FOLDER, project_id)
         os.makedirs(project_video_folder, exist_ok=True)
         
-        # Call video generator to create video
-        # The updated video_generator will handle Redis image retrieval
+        print(f"Project video folder: {project_video_folder}")
+        # 从请求中获取参数
+
+        
+        # print(f"Data: {data}")
+        # # 从请求中提取配置参数或使用默认值
+        # static_mask = data.get('static_mask', None)
+        # dynamic_masks = data.get('dynamic_masks', None)
+        
+
+        # 选择要使用的图片
+        # 从redis中获取图片， 模糊匹配
+        image_key = f"image:{project_id}-image-*"
+        imagesss = redis_client.keys(image_key)
+
+        # 从imagesss中选择第一张图片
+        image_path = imagesss[0]
+        print(f"Using image path: {image_path}")
+
+        image_data = redis_client.get(image_path)
+
+        # 调用视频生成器
         video_result = video_generator.generate_video(
-            project['image_path'], 
-            project['script'],
-            output_dir=project_video_folder
+            image_path=image_path,
+            image_data=image_data,
+            script=description,  # 使用提取的旁白文本
+            output_dir=project_video_folder,
         )
         
-        # Update project with video info
+        # 更新项目的视频信息
         project['video'] = video_result
         project['updated_at'] = datetime.now().isoformat()
         save_project(project)
@@ -554,6 +632,56 @@ def generate_video(project_id):
         })
     except Exception as e:
         return jsonify({"error": f"Failed to generate video: {str(e)}"}), 500
+
+@app.route('/api/projects/<project_id>/video/status', methods=['GET'])
+def check_video_status(project_id):
+    """检查项目视频生成的状态"""
+    try:
+        # 检查项目是否存在
+        project = get_project(project_id)
+        if not project:
+            return jsonify({"error": "Project not found"}), 404
+        
+        # 检查是否有视频信息
+        if 'video' not in project or not project['video']:
+            return jsonify({
+                "status": "not_generated",
+                "message": "Video has not been generated yet"
+            })
+        
+        video_info = project['video']
+        
+        # 检查视频文件是否存在
+        if 'file_path' in video_info:
+            video_path = video_info['file_path']
+            if os.path.exists(video_path):
+                return jsonify({
+                    "status": "completed",
+                    "video": video_info
+                })
+            else:
+                return jsonify({
+                    "status": "file_missing",
+                    "message": "Video file is missing, may need to regenerate"
+                })
+        
+        # 检查是否正在处理中
+        if 'status' in video_info and video_info['status'] == 'processing':
+            return jsonify({
+                "status": "processing",
+                "message": "Video generation is in progress",
+                "started_at": video_info.get('started_at')
+            })
+        
+        return jsonify({
+            "status": "unknown",
+            "video_info": video_info
+        })
+    
+    except Exception as e:
+        app.logger.error(f"Error checking video status: {str(e)}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to check video status: {str(e)}"}), 500
 
 @app.route('/api/projects/<project_id>', methods=['GET'])
 def get_project_details(project_id):
@@ -822,6 +950,364 @@ def serve_image(project_id, filename):
         return response
     except Exception as e:
         return jsonify({"error": f"Failed to process image: {str(e)}"}), 500
+
+# Template management endpoints
+
+@app.route('/api/templates', methods=['GET'])
+def get_templates():
+    """Get all prompt templates"""
+    try:
+        # Get all template keys from Redis
+        template_keys = redis_client.keys("template:*")
+        templates = []
+        
+        for key in template_keys:
+            template_data = redis_client.get(key)
+            if template_data:
+                template = json.loads(template_data)
+                templates.append(template)
+        
+        # Sort templates by creation date (newest first)
+        templates.sort(key=lambda x: x.get('createdAt', ''), reverse=True)
+        
+        return jsonify({
+            "success": True,
+            "templates": templates
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to get templates: {str(e)}"}), 500
+
+@app.route('/api/templates', methods=['POST'])
+def create_template():
+    """Create a new prompt template"""
+    data = request.json
+    
+    if not data or 'name' not in data or 'systemPrompt' not in data or 'userPrompt' not in data:
+        return jsonify({"error": "Missing required template data"}), 400
+    
+    try:
+        # Generate a unique ID for the template
+        template_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        
+        template = {
+            "id": template_id,
+            "name": data['name'],
+            "systemPrompt": data['systemPrompt'],
+            "userPrompt": data['userPrompt'],
+            "createdAt": now,
+            "updatedAt": now
+        }
+        
+        # Save template to Redis
+        redis_client.set(f"template:{template_id}", json.dumps(template))
+        
+        return jsonify({
+            "success": True,
+            "template": template
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to create template: {str(e)}"}), 500
+
+@app.route('/api/templates/<template_id>', methods=['PUT'])
+def update_template(template_id):
+    """Update an existing prompt template"""
+    data = request.json
+    
+    if not data:
+        return jsonify({"error": "Missing template data"}), 400
+    
+    try:
+        # Get existing template
+        template_key = f"template:{template_id}"
+        template_data = redis_client.get(template_key)
+        
+        if not template_data:
+            return jsonify({"error": "Template not found"}), 404
+        
+        template = json.loads(template_data)
+        
+        # Update template fields
+        if 'name' in data:
+            template['name'] = data['name']
+        if 'systemPrompt' in data:
+            template['systemPrompt'] = data['systemPrompt']
+        if 'userPrompt' in data:
+            template['userPrompt'] = data['userPrompt']
+        
+        template['updatedAt'] = datetime.now().isoformat()
+        
+        # Save updated template
+        redis_client.set(template_key, json.dumps(template))
+        
+        return jsonify({
+            "success": True,
+            "template": template
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to update template: {str(e)}"}), 500
+
+@app.route('/api/templates/<template_id>', methods=['DELETE'])
+def delete_template(template_id):
+    """Delete a prompt template"""
+    try:
+        # Delete template from Redis
+        template_key = f"template:{template_id}"
+        exists = redis_client.exists(template_key)
+        
+        if not exists:
+            return jsonify({"error": "Template not found"}), 404
+        
+        redis_client.delete(template_key)
+        
+        return jsonify({
+            "success": True,
+            "message": "Template deleted successfully"
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to delete template: {str(e)}"}), 500
+
+# Text-to-Speech endpoints
+
+@app.route('/api/projects/<project_id>/speech/generate', methods=['POST'])
+def generate_speech(project_id):
+    """Generate speech audio from project script"""
+    global tts_client
+    if tts_client is None:
+        tts_client = get_tts_client()
+    
+    project = get_project(project_id)
+    
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+    
+    if not project.get('script'):
+        return jsonify({"error": "No script has been created for this project"}), 400
+    
+    # 从请求中获取语言参数（可选）
+    language = request.args.get('language', 'zh-CN')
+    
+    # 从请求中获取文本参数（可选），如果不存在则从项目脚本中提取旁白文本
+    data = request.json or {}
+    text = data.get('text')
+    
+    if not text:
+        # 从项目脚本中提取旁白文本
+        script = project['script']
+        
+        # 尝试识别脚本格式并提取旁白部分
+        if "旁白文本:" in script:
+            # 提取"旁白文本:"之后的内容
+            parts = script.split("旁白文本:", 1)
+            if len(parts) > 1:
+                text = parts[1].strip()
+        elif "旁白文本：" in script:  # 处理中文冒号的情况
+            parts = script.split("旁白文本：", 1)
+            if len(parts) > 1:
+                text = parts[1].strip()
+        
+        if not text:
+            # 如果无法提取旁白文本，使用整个脚本
+            text = script
+        else:
+            # 删除提取的文本中可能存在的"旁白文本:"前缀
+            if text.startswith("旁白文本:"):
+                text = text.replace("旁白文本:", "", 1).strip()
+            elif text.startswith("旁白文本："):
+                text = text.replace("旁白文本：", "", 1).strip()
+    
+    try:
+        print(f"Generating speech for project {project_id}")
+        
+        # 调用TTS客户端生成语音
+        result = tts_client.generate_speech(text, project_id, language)
+        
+        if result['status'] == 'success':
+            # 更新项目与语音文件关联
+            if 'speech' not in project or not isinstance(project['speech'], list):
+                project['speech'] = []
+            
+            project['speech'].append({
+                'path': result['path'],
+                'created_at': datetime.now().isoformat(),
+                'language': language
+            })
+            
+            project['updated_at'] = datetime.now().isoformat()
+            save_project(project)
+            
+            return jsonify({
+                "success": True,
+                "message": "Speech generated successfully",
+                "speech": {
+                    "path": result['path'],
+                    "language": language
+                }
+            })
+        else:
+            return jsonify({"error": result['error']}), 500
+            
+    except Exception as e:
+        return jsonify({"error": f"Failed to generate speech: {str(e)}"}), 500
+
+@app.route('/api/projects/<project_id>/speech', methods=['GET'])
+def get_project_speeches(project_id):
+    """Get all speeches for a project"""
+    project = get_project(project_id)
+    
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+    
+    speeches = project.get('speech', [])
+    
+    return jsonify({
+        "success": True,
+        "speeches": speeches
+    })
+
+@app.route('/api/speeches/<path:filename>', methods=['GET'])
+def serve_speech_file(filename):
+    """Serve speech audio files"""
+    return send_from_directory(SPEECH_FOLDER, filename)
+
+@app.route('/api/projects/<project_id>/speech', methods=['DELETE'])
+def delete_project_speech(project_id):
+    """Delete all speeches for a project"""
+    project = get_project(project_id)
+    
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+    
+    try:
+        # 获取TTS客户端
+        global tts_client
+        if tts_client is None:
+            tts_client = get_tts_client()
+        
+        # 清理所有语音文件
+        tts_client.clean_old_speeches(project_id)
+        
+        # 更新项目
+        project['speech'] = []
+        project['updated_at'] = datetime.now().isoformat()
+        save_project(project)
+        
+        return jsonify({
+            "success": True,
+            "message": "All speeches deleted successfully"
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to delete speeches: {str(e)}"}), 500
+
+@app.route('/api/test/video/generate', methods=['POST'])
+def test_generate_video():
+
+    """Test endpoint to generate a video without a project"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        # Get image data (either base64 or path)
+        image_data = data.get('image_data')
+        image_path = data.get('image_path')
+        script_content = data.get('script_content')
+
+        if not script_content:
+            return jsonify({"error": "Script content is required"}), 400
+        
+        if not image_data and not image_path:
+            return jsonify({"error": "Either image_data or image_path must be provided"}), 400
+
+        # Create a test directory for this request
+        test_dir = os.path.join(TEST_FILES_DIR, f"test_{int(time.time())}")
+        os.makedirs(test_dir, exist_ok=True)
+
+        # Handle image data if provided as base64
+        if image_data:
+            # If data URL format, extract the base64 part
+            if image_data.startswith('data:'):
+                image_data = image_data.split(',', 1)[1]
+            
+            # Convert base64 to bytes
+            image_bytes = base64.b64decode(image_data)
+            
+            # Save image to test directory
+            image_path = os.path.join(test_dir, f"test_image_{uuid.uuid4()}.jpg")
+            with open(image_path, 'wb') as f:
+                f.write(image_bytes)
+        
+        # Save script content to a file
+        script_path = os.path.join(test_dir, f"test_script_{uuid.uuid4()}.txt")
+        with open(script_path, 'w') as f:
+            f.write(script_content)
+        
+        # Generate video
+        video_generator = get_video_generator()
+        result = video_generator.generate_video(
+        
+            image_path=image_path,
+            script=script_content,
+            output_dir=VIDEO_OUTPUT_PATH
+        )
+        
+        # Add timestamp to result
+        result['timestamp'] = datetime.now().isoformat()
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        app.logger.error(f"Error generating test video: {str(e)}")
+        return jsonify({"error": str(e), "status": "failed"}), 500
+
+@app.route('/api/test/video/status', methods=['POST'])
+def test_video_status():
+    """测试检查视频生成状态的功能"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        # 接收视频任务ID或视频文件路径
+        video_path = data.get('video_path')
+        video_id = data.get('video_id')
+        
+        if not video_path and not video_id:
+            return jsonify({"error": "Either video_path or video_id is required"}), 400
+        
+        # 如果提供了文件路径，检查文件是否存在
+        if video_path:
+            if os.path.exists(video_path):
+                return jsonify({
+                    "status": "completed",
+                    "message": "Video file exists",
+                    "video_path": video_path
+                })
+            else:
+                return jsonify({
+                    "status": "file_missing",
+                    "message": "Video file does not exist",
+                    "video_path": video_path
+                })
+        
+        # 如果提供了视频ID，模拟检查任务状态
+        if video_id:
+            # 这里可以添加实际检查KlingAI任务状态的逻辑
+            # 目前仅返回模拟数据
+            import random
+            statuses = ["processing", "completed", "failed"]
+            status = random.choice(statuses)
+            
+            return jsonify({
+                "status": status,
+                "video_id": video_id,
+                "message": f"Video task is {status} (simulated response)"
+            })
+    
+    except Exception as e:
+        app.logger.error(f"Error in test video status: {str(e)}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to check video status: {str(e)}"}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8888))
