@@ -13,10 +13,7 @@ fi
 mkdir -p uploads videos
 
 # Check if we have the required packages
-if ! pip list | grep -q "flask"; then
-    echo "Installing required packages..."
-    python3 -m pip install -r requirements-backend.txt
-fi
+python3 -m pip install -r requirements-backend.txt
 
 # Start Flask app
 echo "Starting Flask API server..."
