@@ -22,8 +22,12 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
-CORS(app, resources={r"/api/*": {"origins": "http://0.0.0.0:3000"}})
+# Configure CORS to allow requests from all necessary origins
+CORS(app, resources={r"/api/*": {"origins": [
+    "http://localhost:3000",
+    "http://0.0.0.0:3000",
+    "http://50.19.10.82:3000"
+], "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"], "allow_headers": "*"}})
 
 # Configure Redis
 redis_client = redis.Redis(
