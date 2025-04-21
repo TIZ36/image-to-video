@@ -27,10 +27,21 @@ CORS(app, resources={r"/api/*": {"origins": [
     "http://localhost:3000",
     "http://0.0.0.0:3000",
     "http://50.19.10.82:3000",
+    "http://172.31.28.157:3000",
     "http://127.0.0.1:3000",
     "http://50.19.10.82:8888",
     "http://localhost:8888",
-    "http://127.0.0.1:8888"
+    "http://127.0.0.1:8888",
+    "http://172.31.28.157:8888",
+    "http://50.19.10.82:8888/api",
+    "http://172.31.28.157:8888/api",
+    "http://50.19.10.82:8888",
+    "http://172.31.28.157:8888",
+    "http://localhost:8888/api",
+    "http://127.0.0.1:8888/api",
+    "http://172.31.28.157:8888/api",
+    "http://50.19.10.82:8888/api",
+
 ], "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"], "allow_headers": "*"}})
 
 # Configure Redis
