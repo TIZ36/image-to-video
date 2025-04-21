@@ -1020,83 +1020,93 @@ def delete_template(template_id):
 @app.route('/api/projects/<project_id>/speech/generate', methods=['POST'])
 def generate_speech(project_id):
     """Generate speech audio from project script"""
-    global tts_client
-    if tts_client is None:
-        tts_client = get_tts_client()
-    
-    project = get_project(project_id)
-    
-    if not project:
-        return jsonify({"error": "Project not found"}), 404
-    
-    if not project.get('script'):
-        return jsonify({"error": "No script has been created for this project"}), 400
-    
-    # 从请求中获取语言参数（可选）
-    language = request.args.get('language', 'zh-CN')
-    
-    # 从请求中获取文本参数（可选），如果不存在则从项目脚本中提取旁白文本
-    data = request.json or {}
-    text = data.get('text')
-    
-    if not text:
-        # 从项目脚本中提取旁白文本
-        script = project['script']
+    try:
+        global tts_client
+        if tts_client is None:
+            tts_client = get_tts_client()
         
-        # 尝试识别脚本格式并提取旁白部分
-        if "旁白文本:" in script:
-            # 提取"旁白文本:"之后的内容
-            parts = script.split("旁白文本:", 1)
-            if len(parts) > 1:
-                text = parts[1].strip()
-        elif "旁白文本：" in script:  # 处理中文冒号的情况
-            parts = script.split("旁白文本：", 1)
-            if len(parts) > 1:
-                text = parts[1].strip()
+        project = get_project(project_id)
+        
+        if not project:
+            return jsonify({"error": "Project not found"}), 404
+        
+        if not project.get('script'):
+            return jsonify({"error": "No script has been created for this project"}), 400
+        
+        # Get language from query parameters
+        language = request.args.get('language', 'zh-CN')
+        
+        # Get text from request body or extract from project script
+        data = request.json or {}
+        text = data.get('text')
         
         if not text:
-            # 如果无法提取旁白文本，使用整个脚本
-            text = script
-        else:
-            # 删除提取的文本中可能存在的"旁白文本:"前缀
-            if text.startswith("旁白文本:"):
-                text = text.replace("旁白文本:", "", 1).strip()
-            elif text.startswith("旁白文本："):
-                text = text.replace("旁白文本：", "", 1).strip()
-    
-    try:
-        print(f"Generating speech for project {project_id}")
+            # Extract narration text from project script
+            script = project['script']
+            
+            # Try to identify script format and extract narration
+            if "旁白文本:" in script:
+                parts = script.split("旁白文本:", 1)
+                if len(parts) > 1:
+                    text = parts[1].strip()
+            elif "旁白文本：" in script:  # Handle Chinese colon
+                parts = script.split("旁白文本：", 1)
+                if len(parts) > 1:
+                    text = parts[1].strip()
+            
+            if not text:
+                # If can't extract narration, use entire script
+                text = script
+            else:
+                # Remove any remaining "旁白文本:" prefix
+                if text.startswith("旁白文本:"):
+                    text = text.replace("旁白文本:", "", 1).strip()
+                elif text.startswith("旁白文本："):
+                    text = text.replace("旁白文本：", "", 1).strip()
         
-        # 调用TTS客户端生成语音
-        result = tts_client.generate_speech(text, project_id, language)
-        
-        if result['status'] == 'success':
-            # 更新项目与语音文件关联
-            if 'speech' not in project or not isinstance(project['speech'], list):
-                project['speech'] = []
+        try:
+            app.logger.info(f"Generating speech for project {project_id}")
+            app.logger.info(f"Language: {language}")
+            app.logger.info(f"Text length: {len(text)} characters")
             
-            project['speech'].append({
-                'path': result['path'],
-                'created_at': datetime.now().isoformat(),
-                'language': language
-            })
+            # Generate speech using TTS client
+            result = tts_client.generate_speech(text, project_id, language)
             
-            project['updated_at'] = datetime.now().isoformat()
-            save_project(project)
-            
-            return jsonify({
-                "success": True,
-                "message": "Speech generated successfully",
-                "speech": {
-                    "path": result['path'],
-                    "language": language
-                }
-            })
-        else:
-            return jsonify({"error": result['error']}), 500
+            if result['status'] == 'success':
+                # Update project with speech file information
+                if 'speech' not in project or not isinstance(project['speech'], list):
+                    project['speech'] = []
+                
+                project['speech'].append({
+                    'path': result['path'],
+                    'created_at': datetime.now().isoformat(),
+                    'language': language
+                })
+                
+                project['updated_at'] = datetime.now().isoformat()
+                save_project(project)
+                
+                return jsonify({
+                    "success": True,
+                    "message": "Speech generated successfully",
+                    "speech": {
+                        "path": result['path'],
+                        "language": language
+                    }
+                })
+            else:
+                app.logger.error(f"TTS client error: {result.get('error', 'Unknown error')}")
+                return jsonify({"error": result.get('error', 'Failed to generate speech')}), 500
+                
+        except Exception as e:
+            app.logger.error(f"Error in TTS generation: {str(e)}")
+            app.logger.error(traceback.format_exc())
+            return jsonify({"error": f"Failed to generate speech: {str(e)}"}), 500
             
     except Exception as e:
-        return jsonify({"error": f"Failed to generate speech: {str(e)}"}), 500
+        app.logger.error(f"Unexpected error in generate_speech: {str(e)}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
 @app.route('/api/projects/<project_id>/speech', methods=['GET'])
 def get_project_speeches(project_id):
