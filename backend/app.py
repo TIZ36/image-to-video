@@ -378,21 +378,23 @@ def upload_image(project_id):
 @app.route('/api/projects/<project_id>/script/generate', methods=['POST'])
 def generate_script(project_id):
     """Generate a marketing script based on the project's image using LLM"""
-    global llm_client
-    if llm_client is None:
-        llm_client = get_llm_client(redis_client)
-    
-    project = get_project(project_id)
-    
-    if not project:
-        return jsonify({"error": "Project not found"}), 404
-    
-    # 获取要使用的图片路径
-    image_paths = []
-    
-    # 检查是否指定了特定图片 - 支持多个image_id
-    image_ids = request.args.getlist('image_id')
-    if image_ids:
+    try:
+        global llm_client
+        if llm_client is None:
+            llm_client = get_llm_client(redis_client)
+        
+        project = get_project(project_id)
+        
+        if not project:
+            return jsonify({"error": "Project not found"}), 404
+        
+        # Get image IDs from query parameters
+        image_ids = request.args.getlist('image_id')
+        if not image_ids:
+            return jsonify({"error": "No image_id provided"}), 400
+        
+        # Get image paths
+        image_paths = []
         for img_id in image_ids:
             try:
                 img_id = int(img_id)
@@ -400,142 +402,68 @@ def generate_script(project_id):
                 image_paths.append(image_path)
             except ValueError:
                 return jsonify({"error": f"Invalid image ID: {img_id}"}), 400
-    elif 'images' in project and project['images']:
-        # 使用第一张图片
-        image_paths.append(project['images'][0]['path'])
-    elif project['image_path']:
-        # 兼容旧版本
-        image_paths.append(project['image_path'])
-    else:
-        return jsonify({"error": "No image has been uploaded for this project"}), 400
-    
-    # 确保至少有一张图片
-    if not image_paths:
-        return jsonify({"error": "No valid images selected"}), 400
-    
-    try:
-        # 获取提示词数据
+        
+        # Get prompt data
         prompt_data = request.json or {}
         system_prompt = prompt_data.get('systemPrompt', '')
         user_prompt = prompt_data.get('userPrompt', '')
         
-        # 处理所有图片并生成脚本
-        # 暂时使用第一张图片，后续可扩展为使用多张图片
-        image_path = image_paths[0]
-        
-        # 处理新格式的图片路径
-        if '-image-' in image_path:
-            parts = image_path.strip('/').split('/')
-            if len(parts) >= 3 and parts[0] == 'api' and parts[1] == 'images':
-                img_path = parts[2]
-                img_parts = img_path.split('-image-')
-                if len(img_parts) == 2:
-                    img_project_id = img_parts[0]
-                    img_id = img_parts[1]
-                    image_key = f"image:{img_project_id}-image-{img_id}"
-                    data_url = redis_client.get(image_key)
-                    
-                    if not data_url:
-                        return jsonify({"error": "Image not found in database"}), 404
-                    
-                    # 处理data URL格式
-                    if data_url.startswith('data:'):
-                        parts = data_url.split(',', 1)
-                        if len(parts) < 2:
-                            return jsonify({"error": "Invalid image format"}), 500
-                        base64_data = parts[1]
-                    else:
-                        base64_data = data_url
-                    
-                    # 创建临时文件
-                    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
-                        try:
-                            temp_file.write(base64.b64decode(base64_data))
-                        except Exception as e:
-                            return jsonify({"error": f"Failed to decode image: {str(e)}"}), 500
-                        temp_image_path = temp_file.name
-                    
-                    try:
-                        # 调用LLM生成脚本，传递提示词
-                        script = llm_client.generate_script(
-                            project_id,
-                            img_id,
-                            project['name'],
-                            project.get('description', ''),
-                            system_prompt=system_prompt,
-                            user_prompt=user_prompt
-                        )
-                    finally:
-                        # 清理临时文件
-                        import os
-                        if os.path.exists(temp_image_path):
-                            os.unlink(temp_image_path)
-                else:
-                    return jsonify({"error": "Invalid image path format"}), 400
+        # Process images and generate script
+        try:
+            # Get image data from Redis
+            image_key = f"image:{project_id}-image-{image_ids[0]}"
+            data_url = redis_client.get(image_key)
+            
+            if not data_url:
+                return jsonify({"error": "Image not found in database"}), 404
+            
+            # Process data URL
+            if data_url.startswith('data:'):
+                parts = data_url.split(',', 1)
+                if len(parts) < 2:
+                    return jsonify({"error": "Invalid image format"}), 500
+                base64_data = parts[1]
             else:
-                return jsonify({"error": "Invalid image path format"}), 400
-        
-        # 处理旧格式的图片路径
-        elif image_path.startswith('/api/'):
-            parts = image_path.strip('/').split('/')
-            if len(parts) >= 4 and parts[0] == 'api' and parts[1] == 'images':
-                img_project_id = parts[2]
-                filename = parts[3]
-                image_key = f"image:{img_project_id}:{filename}"
-                data_url = redis_client.get(image_key)
-                
-                if not data_url:
-                    return jsonify({"error": "Image not found in database"}), 404
-                
-                # 处理data URL格式
-                if data_url.startswith('data:'):
-                    parts = data_url.split(',', 1)
-                    if len(parts) < 2:
-                        return jsonify({"error": "Invalid image format"}), 500
-                    base64_data = parts[1]
-                else:
-                    base64_data = data_url
-                
-                # 创建临时文件
-                with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
-                    try:
-                        temp_file.write(base64.b64decode(base64_data))
-                    except Exception as e:
-                        return jsonify({"error": f"Failed to decode image: {str(e)}"}), 500
-                    temp_image_path = temp_file.name
-                
+                base64_data = data_url
+            
+            # Create temporary file
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
                 try:
-                    # 调用LLM生成脚本，传递提示词
+                    temp_file.write(base64.b64decode(base64_data))
+                    temp_image_path = temp_file.name
+                    
+                    # Generate script
                     script = llm_client.generate_script(
                         project_id,
-                        img_id,
+                        image_ids[0],
                         project['name'],
                         project.get('description', ''),
                         system_prompt=system_prompt,
                         user_prompt=user_prompt
                     )
+                    
+                    # Update project with new script
+                    project['script'] = script
+                    project['updated_at'] = datetime.now().isoformat()
+                    save_project(project)
+                    
+                    return jsonify({
+                        "success": True,
+                        "script": script
+                    })
                 finally:
-                    # 清理临时文件
-                    import os
+                    # Clean up temporary file
                     if os.path.exists(temp_image_path):
                         os.unlink(temp_image_path)
-            else:
-                return jsonify({"error": "Invalid image path format"}), 400
-        else:
-            # 这种情况不应该发生，因为所有的图片路径都应该以"/api/"开头
-            return jsonify({"error": "Invalid image path format"}), 400
-        
-        # 更新项目的脚本
-        project['script'] = script
-        project['updated_at'] = datetime.now().isoformat()
-        save_project(project)
-        
-        return jsonify({
-            "success": True,
-            "script": script
-        })
+        except Exception as e:
+            app.logger.error(f"Error generating script: {str(e)}")
+            app.logger.error(traceback.format_exc())
+            return jsonify({"error": f"Failed to generate script: {str(e)}"}), 500
+            
     except Exception as e:
-        return jsonify({"error": f"Failed to generate script: {str(e)}"}), 500
+        app.logger.error(f"Unexpected error in generate_script: {str(e)}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
 @app.route('/api/projects/<project_id>/script', methods=['PUT'])
 def update_script(project_id):
