@@ -26,7 +26,11 @@ app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": [
     "http://localhost:3000",
     "http://0.0.0.0:3000",
-    "http://50.19.10.82:3000"
+    "http://50.19.10.82:3000",
+    "http://127.0.0.1:3000",
+    "http://50.19.10.82:8888",
+    "http://localhost:8888",
+    "http://127.0.0.1:8888"
 ], "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"], "allow_headers": "*"}})
 
 # Configure Redis
@@ -1316,4 +1320,4 @@ def test_video_status():
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8888))
-    app.run(host='0.0.0.0', port=port, debug=True) 
+    app.run(host='0.0.0.0', port=port, debug=True)
