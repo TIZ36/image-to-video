@@ -358,7 +358,7 @@ export default function ImageGallery({
         imageUrl = `/${imageUrl}`;
       }
       
-      return `http://0.0.0.0:8888${imageUrl}`;
+      return `http://50.19.10.82:8888${imageUrl}`;
     }
   };
 
