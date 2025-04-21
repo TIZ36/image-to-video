@@ -69,7 +69,10 @@ interface PromptFormProps {
 }
 
 // Helper function to parse script into description and narration
-const parseScript = (script: string): ScriptOutput => {
+const parseScript = (script: string | null | undefined): ScriptOutput => {
+  // Check if script is null or undefined
+  if (!script) return { description: '', narration: '' };
+  
   // Try to identify if the script already has sections
   if (script.includes('视频描述:') && script.includes('旁白文本:')) {
     const descriptionMatch = script.match(/视频描述:([\s\S]*?)(?=旁白文本:|$)/);

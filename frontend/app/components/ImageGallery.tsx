@@ -264,7 +264,10 @@ export default function ImageGallery({
   };
   
   // Extract numeric ID from image path
-  const extractImageId = (path: string): number | undefined => {
+  const extractImageId = (path: string | null | undefined): number | undefined => {
+    // Check if path is null or undefined
+    if (!path) return undefined;
+    
     // Extract ID from new format paths like '/api/images/project-image-1'
     const match = path.match(/\/api\/images\/.*-image-(\d+)/);
     if (match && match[1]) {
