@@ -120,7 +120,7 @@ export interface TemplatesListResponse {
 }
 
 // Define API base URL
-const API_BASE_URL = 'http://localhost:8888/api';
+const API_BASE_URL = 'http://0.0.0.0:8888/api';
 
 /**
  * Create a new project
