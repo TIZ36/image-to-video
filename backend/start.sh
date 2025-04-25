@@ -17,4 +17,4 @@ python3 -m pip install -r requirements-backend.txt
 
 # Start Flask app
 echo "Starting Flask API server..."
-nohup python3 app.py > /dev/null 2>&1 &
+nohup python3 app.py > log.txt 2>&1 &

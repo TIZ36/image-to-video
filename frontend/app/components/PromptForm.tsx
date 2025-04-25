@@ -456,7 +456,7 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
     try {
       // Create the prompt data with system and user prompts
       const promptData = {
-        systemPrompt: `${processedSystemPrompt || systemPrompt}\n 请只输出印尼语文字！`,
+        systemPrompt: `${processedSystemPrompt || systemPrompt}\n `,
         userPrompt: `${processedUserPrompt || userPrompt}\n\n请将脚本分为两部分：\n1. 视频描述：简短介绍视频内容\n2. 旁白文本：详细的语音旁白内容，`
       };
       

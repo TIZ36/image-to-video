@@ -105,8 +105,8 @@ class KlingGenerator(VideoGenerator):
         self.secret_key = os.getenv('KLING_SECRET_KEY', '')
         self.endpoint = os.getenv('KLING_API_ENDPOINT', 'https://api.klingai.com')
         self.model = os.getenv('KLING_MODEL', 'kling-v1')
-        self.max_duration = os.getenv('KLING_MAX_DURATION', '5')  # Default 5 seconds
-        self.mode = os.getenv('KLING_MODE', 'pro')  # Default to professional mode
+        self.max_duration = os.getenv('KLING_MAX_DURATION', '10')  # Default 5 seconds
+        self.mode = os.getenv('KLING_MODE', 'std')  # Default to professional mode
         self.cfg_scale = float(os.getenv('KLING_CFG_SCALE', '0.5'))  # Default cfg scale value
         
         if not self.access_key or not self.secret_key:
@@ -316,8 +316,7 @@ class KlingGenerator(VideoGenerator):
             # 发送请求到Kling API
             url = f"{self.endpoint}/v1/videos/image2video"
             print(f"Sending video generation request to Kling API: {url}")
-            print(f"Request data (excluding image content): {json.dumps({k: v for k, v in data.items() if k not in ['static_mask']}, indent=2)}")
-            
+            print(f"Request data (excluding image content): {json.dumps({k: v for k, v in data.items() if k not in ['static_mask','image']}, indent=2)}")
             response = requests.post(url, headers=headers, json=data)
             
             # 检查响应状态
@@ -495,7 +494,7 @@ class MockVideoGenerator(VideoGenerator):
         return {
             "status": "completed",
             "url": mock_url,
-            "duration": 15,
+            "duration": 10,
             "mock": True
         }
 
