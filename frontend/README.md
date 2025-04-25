@@ -1,36 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 图片转视频前端应用
 
-## Getting Started
+这是一个使用Next.js构建的图片转视频应用的前端部分。
 
-First, run the development server:
+## 环境要求
+
+- Node.js >= 14.0.0
+- npm >= 6.0.0
+
+## 安装
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# 安装依赖
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 运行
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 开发模式（前台运行）
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+# 使用默认IP启动
+./start.sh
 
-## Learn More
+# 指定IP地址启动
+./start.sh 外部IP地址 内部IP地址
 
-To learn more about Next.js, take a look at the following resources:
+# 例如
+./start.sh 50.19.10.82 172.31.28.157
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 后台运行（守护进程模式）
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+# 使用默认IP启动守护进程
+./start-daemon.sh
 
-## Deploy on Vercel
+# 指定IP地址启动守护进程
+./start-daemon.sh 外部IP地址 内部IP地址
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# 例如
+./start-daemon.sh 50.19.10.82 172.31.28.157
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 停止服务
+
+如果使用守护进程模式启动，可以使用以下命令停止服务：
+
+```bash
+./stop.sh
+```
+
+## 配置说明
+
+服务器IP地址配置优先级：
+
+1. 命令行参数（优先级最高）
+2. 环境变量（NEXT_PUBLIC_SERVER_IP, NEXT_PUBLIC_INTERNAL_SERVER_IP）
+3. .env.local文件中的配置
+4. 默认值（50.19.10.82和172.31.28.157）
+
+### IP地址说明
+
+- **外部IP (SERVER_IP)**: 用于外部访问的服务器IP地址，通常用于客户端API请求
+- **内部IP (INTERNAL_SERVER_IP)**: 用于内部网络的服务器IP地址，通常用于服务器间通信
+
+## 日志
+
+当使用守护进程模式启动时，日志文件存储在`logs`目录下。可以使用以下命令查看日志：
+
+```bash
+# 查看最新日志文件
+ls -lt logs | head -n 2
+
+# 实时查看日志
+tail -f logs/前端日志文件名.log
+```
+
+## 故障排除
+
+### 服务无法启动
+
+1. 检查Node.js和npm版本
+2. 确保没有其他服务占用3000端口
+3. 查看日志文件中的错误信息
+
+### API请求失败
+
+1. 确保后端服务已启动
+2. 检查配置的服务器IP地址是否正确
+3. 验证API请求路径是否正确

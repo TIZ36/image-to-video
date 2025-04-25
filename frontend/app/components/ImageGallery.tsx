@@ -21,6 +21,7 @@ import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import CloseIcon from '@mui/icons-material/Close';
 import { uploadImage, createProject, getProjectImages, deleteProjectImage, ProjectImage } from '../services/api.service';
 import { useLanguage } from '../contexts/LanguageContext';
+import { getImageUrl } from '../config/env';
 
 const VisuallyHiddenInput = styled('input')({
   clip: 'rect(0 0 0 0)',
@@ -352,13 +353,8 @@ export default function ImageGallery({
       // 完整的HTTP URL可以直接使用
       return imageUrl;
     } else {
-      // 相对路径，需要添加API服务器前缀
-      // 确保路径以/开头
-      if (!imageUrl.startsWith('/')) {
-        imageUrl = `/${imageUrl}`;
-      }
-      
-      return `http://50.19.10.82:8888${imageUrl}`;
+      // Use our centralized config function to get the correct image URL
+      return getImageUrl(imageUrl);
     }
   };
 

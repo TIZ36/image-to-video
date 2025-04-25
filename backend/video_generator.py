@@ -121,6 +121,8 @@ class KlingGenerator(VideoGenerator):
         """
         # 手动实现JWT令牌生成
         try:
+            print(f"Generating JWT token for Kling API with access key: {self.access_key}"
+                  f"and secret key: {self.secret_key}")
             # 创建header部分
             header = {
                 "alg": "HS256",
@@ -265,7 +267,11 @@ class KlingGenerator(VideoGenerator):
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {jwt_token}"
             }
-            
+
+            print(f"JWT token: {jwt_token}")
+            print(f"Prompt: {script}")
+            print(f"Image path: {image_path}")
+            print(f"Image data: {image_data}")
             # 准备请求数据
             data = {
                 "model_name": self.model,
@@ -313,6 +319,10 @@ class KlingGenerator(VideoGenerator):
                     if mask_item:
                         data["dynamic_masks"].append(mask_item)
             
+
+            print(f"Request headers: {headers}")
+            print(f"Request data: {data}")
+
             # 发送请求到Kling API
             url = f"{self.endpoint}/v1/videos/image2video"
             print(f"Sending video generation request to Kling API: {url}")
@@ -431,6 +441,7 @@ class KlingGenerator(VideoGenerator):
                 if task_status == "failed":
                     # 任务失败
                     error_message = result.get('data', {}).get('task_status_msg', 'Unknown error')
+                    print(f"Task failed Reason: {result}")
                     return {
                         "status": "failed",
                         "error": error_message

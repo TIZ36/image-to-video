@@ -186,6 +186,45 @@ export default function Home() {
     }
   };
 
+  // 获取项目有声视频URL
+  const getProjectAudioVideoUrl = (project: Project | null): string | undefined => {
+    if (!project || !project.video) return undefined;
+    
+    // 检查项目视频是否包含with_audio标志或URL中包含audio相关标记
+    if (
+      (project.video.with_audio === true) || 
+      (project.video.url && project.video.url.includes('video_with_audio'))
+    ) {
+      // 返回相对路径，让VideoPlayer组件使用getVideoUrl处理
+      return project.video.url;
+    }
+    
+    // 如果没有明确标记但URL包含关键词，也认为是有声视频
+    if (project.video.url && project.video.url.includes('with_audio')) {
+      return project.video.url;
+    }
+    
+    return undefined;
+  };
+
+  // 获取项目原始视频URL
+  const getProjectOriginalVideoUrl = (project: Project | null): string | undefined => {
+    if (!project || !project.video) return undefined;
+    
+    // 如果有原始视频信息，使用它
+    if (project.video.original_video && project.video.original_video.url) {
+      // 返回相对路径，让VideoPlayer组件使用getVideoUrl处理
+      return project.video.original_video.url;
+    }
+    
+    // 否则，检查当前视频是否是无声视频
+    if (project.video.with_audio !== true && project.video.url) {
+      return project.video.url;
+    }
+    
+    return undefined;
+  };
+
   // Reset the application flow
   const handleReset = () => {
     setProjectId(undefined);
@@ -371,8 +410,11 @@ export default function Home() {
                           <Divider sx={{ my: 2 }} />
                           <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                             <VideoPlayer 
-                              videoUrl={videoUrl || selectedProject?.video?.url || ''} 
+                              videoUrl={getProjectOriginalVideoUrl(selectedProject) || videoUrl || ''} 
+                              audioVideoUrl={getProjectAudioVideoUrl(selectedProject)}
                               onReset={handleReset} 
+                              projectId={projectId || selectedProject?.id}
+                              selectedProject={selectedProject}
                             />
                           </Box>
                         </Paper>

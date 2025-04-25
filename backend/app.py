@@ -16,32 +16,26 @@ import tempfile
 from llm_client import get_llm_client
 from video_generator import get_video_generator
 from tts_client import get_tts_client
+from audio_video_sync import merge_audio_video
 
 # Load environment variables
 load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
+server_ip = os.getenv('SERVER_IP', '50.19.10.82')
+internal_server_ip = os.getenv('INTERNAL_SERVER_IP', '172.31.28.157')
 # Configure CORS to allow requests from all necessary origins
 CORS(app, resources={r"/api/*": {"origins": [
     "http://localhost:3000",
-    "http://0.0.0.0:3000",
-    "http://50.19.10.82:3000",
-    "http://172.31.28.157:3000",
-    "http://127.0.0.1:3000",
-    "http://50.19.10.82:8888",
     "http://localhost:8888",
+    "http://127.0.0.1:3000",
     "http://127.0.0.1:8888",
-    "http://172.31.28.157:8888",
-    "http://50.19.10.82:8888/api",
-    "http://172.31.28.157:8888/api",
-    "http://50.19.10.82:8888",
-    "http://172.31.28.157:8888",
-    "http://localhost:8888/api",
-    "http://127.0.0.1:8888/api",
-    "http://172.31.28.157:8888/api",
-    "http://50.19.10.82:8888/api",
-
+    "http://0.0.0.0:3000",
+    f"http://{server_ip}:3000",
+    f"http://{server_ip}:8888",
+    f"http://{internal_server_ip}:3000",
+    f"http://{internal_server_ip}:8888",
 ], "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"], "allow_headers": "*"}})
 
 # Configure Redis
@@ -569,6 +563,10 @@ def generate_video(project_id):
             output_dir=project_video_folder,
         )
         
+        # 确保生成的视频结果中URL格式正确，移除可能的/api前缀
+        if 'url' in video_result and video_result['url'].startswith('/api/'):
+            video_result['url'] = video_result['url'][4:]  # 去掉开头的/api
+            
         # 更新项目的视频信息
         project['video'] = video_result
         project['updated_at'] = datetime.now().isoformat()
@@ -598,6 +596,10 @@ def check_video_status(project_id):
             })
         
         video_info = project['video']
+        
+        # 确保视频URL格式正确
+        if 'url' in video_info and video_info['url'].startswith('/api/'):
+            video_info['url'] = video_info['url'][4:]  # 去掉开头的/api
         
         # 检查视频文件是否存在
         if 'file_path' in video_info:
@@ -638,6 +640,16 @@ def get_project_details(project_id):
     
     if not project:
         return jsonify({"error": "Project not found"}), 404
+    
+    # 确保视频URL格式正确
+    if 'video' in project and project['video']:
+        if 'url' in project['video'] and project['video']['url'].startswith('/api/'):
+            project['video']['url'] = project['video']['url'][4:]  # 去掉开头的/api
+        
+        # 检查原始视频URL (如果存在)
+        if 'original_video' in project['video'] and project['video']['original_video']:
+            if 'url' in project['video']['original_video'] and project['video']['original_video']['url'].startswith('/api/'):
+                project['video']['original_video']['url'] = project['video']['original_video']['url'][4:]
     
     return jsonify({"success": True, "project": project})
 
@@ -1266,6 +1278,209 @@ def test_video_status():
         app.logger.error(f"Error in test video status: {str(e)}")
         app.logger.error(traceback.format_exc())
         return jsonify({"error": f"Failed to check video status: {str(e)}"}), 500
+
+@app.route('/api/projects/<project_id>/video/add-audio', methods=['POST'])
+def add_audio_to_video(project_id):
+    """为项目视频添加音频（语音旁白）"""
+    project = get_project(project_id)
+
+    print(f"Project: {project}")
+    print(f"Project video: {project['video']}")
+    print(f"Project speech: {project['speech']}")
+    
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+    
+    # 检查项目是否有视频
+    if 'video' not in project or not project['video']:
+        return jsonify({"error": "No video has been generated for this project"}), 400
+    
+    # 检查项目是否有语音
+    if 'speech' not in project or not project['speech'] or len(project['speech']) == 0:
+        return jsonify({"error": "No speech has been generated for this project"}), 400
+    
+    try:
+        # 获取视频和音频文件路径
+        video_file = None
+        if 'local_path' in project['video']:
+            video_file = project['video']['local_path']
+            print(f"Using video file_path: {video_file}")
+        elif 'url' in project['video']:
+            # 处理URL格式的视频路径
+            video_url = project['video']['url']
+            print(f"Video URL: {video_url}")
+            
+            if video_url.startswith('/api/videos/'):
+                # 从视频URL解析出项目ID和文件名
+                parts = video_url.split('/')
+                if len(parts) >= 4:
+                    video_project_id = parts[-2]
+                    video_filename = parts[-1]
+                    video_file = os.path.join(VIDEO_FOLDER, video_project_id, video_filename)
+                    print(f"Constructed video path from URL: {video_file}")
+            elif video_url.startswith('/'):
+                # 相对路径，需要转换为完整路径
+                video_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), video_url.lstrip('/'))
+                print(f"Constructed video path from relative path: {video_file}")
+            else:
+                return jsonify({"error": "Unsupported video URL format"}), 400
+        
+        print(f"Final video file: {video_file}")
+        print(f"Video file exists: {os.path.exists(video_file) if video_file else False}")
+        
+        if not video_file or not os.path.exists(video_file):
+            return jsonify({"error": "Video file not found"}), 404
+        
+        # 获取最近的语音文件
+        latest_speech = project['speech'][-1]
+        speech_path = latest_speech['path']
+
+        print(f"Speech path: {speech_path}")
+        
+        # 处理语音路径
+        audio_file = None
+        if speech_path.startswith('/'):
+            # 使用绝对路径，直接从SPEECH_FOLDER获取文件
+            speech_filename = os.path.basename(speech_path)
+            project_speech_folder = os.path.join(SPEECH_FOLDER, project_id)
+            audio_file = os.path.join(project_speech_folder, speech_filename)
+            
+            # 如果直接使用上面的方法找不到，尝试使用原始路径
+            if not os.path.exists(audio_file):
+                # 备选方法：从根目录开始找
+                audio_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), speech_path.lstrip('/'))
+                
+                # 输出调试信息
+                print(f"Fallback audio path: {audio_file}")
+                print(f"SPEECH_FOLDER: {SPEECH_FOLDER}")
+                print(f"File exists: {os.path.exists(audio_file)}")
+        else:
+            return jsonify({"error": "Unsupported speech file path format"}), 400
+        
+        # Speech audio handling
+        if not audio_file or not os.path.exists(audio_file):
+            # Try alternative paths
+            print("Audio file not found at primary location, trying alternatives...")
+            
+            # Option 1: Direct path from SPEECH_FOLDER
+            alt_audio_file = os.path.join(SPEECH_FOLDER, os.path.basename(speech_path))
+            print(f"Trying alt path 1: {alt_audio_file}")
+            
+            if os.path.exists(alt_audio_file):
+                audio_file = alt_audio_file
+                print(f"Found audio at alt path 1: {audio_file}")
+            else:
+                # Option 2: Try with just the project ID folder
+                alt_audio_file = os.path.join(SPEECH_FOLDER, project_id, os.path.basename(speech_path))
+                print(f"Trying alt path 2: {alt_audio_file}")
+                
+                if os.path.exists(alt_audio_file):
+                    audio_file = alt_audio_file
+                    print(f"Found audio at alt path 2: {audio_file}")
+                else:
+                    # Option 3: From project folder with fixed name
+                    alt_audio_file = os.path.join(SPEECH_FOLDER, project_id, "speech.mp3")
+                    print(f"Trying alt path 3: {alt_audio_file}")
+                    
+                    if os.path.exists(alt_audio_file):
+                        audio_file = alt_audio_file
+                        print(f"Found audio at alt path 3: {audio_file}")
+            
+            # Final check
+            if not os.path.exists(audio_file):
+                return jsonify({"error": "Speech audio file not found after trying multiple paths"}), 404
+                
+        # Video file handling
+        if not video_file or not os.path.exists(video_file):
+            # Try alternative paths for video file
+            print("Video file not found at primary location, trying alternatives...")
+            
+            # If we have a URL, try to find the file directly
+            if 'url' in project['video']:
+                video_url = project['video']['url']
+                
+                # Option 1: Direct in VIDEO_FOLDER with project_id
+                if video_url.startswith('/api/videos/'):
+                    parts = video_url.split('/')
+                    if len(parts) >= 4:
+                        video_filename = parts[-1]
+                        alt_video_file = os.path.join(VIDEO_FOLDER, project_id, video_filename)
+                        print(f"Trying alt video path 1: {alt_video_file}")
+                        
+                        if os.path.exists(alt_video_file):
+                            video_file = alt_video_file
+                            print(f"Found video at alt path 1: {video_file}")
+                
+                # Option 2: Search for any video file in the project folder
+                project_video_dir = os.path.join(VIDEO_FOLDER, project_id)
+                if os.path.exists(project_video_dir):
+                    video_files = [f for f in os.listdir(project_video_dir) if f.endswith('.mp4')]
+                    if video_files:
+                        # Use the most recent video file (assuming naming convention with timestamp)
+                        video_files.sort(reverse=True)
+                        alt_video_file = os.path.join(project_video_dir, video_files[0])
+                        print(f"Trying alt video path 2: {alt_video_file}")
+                        
+                        if os.path.exists(alt_video_file):
+                            video_file = alt_video_file
+                            print(f"Found video at alt path 2: {video_file}")
+            
+            # Final check
+            if not os.path.exists(video_file):
+                return jsonify({"error": "Video file not found after trying multiple paths"}), 404
+        
+        # 准备输出路径
+        output_dir = os.path.join(VIDEO_FOLDER, project_id)
+        os.makedirs(output_dir, exist_ok=True)
+        # 使用固定名称代替时间戳
+        output_filename = "video_with_audio.mp4"
+        output_path = os.path.join(output_dir, output_filename)
+        
+        # 如果文件已存在，则删除它
+        if os.path.exists(output_path):
+            try:
+                os.remove(output_path)
+                print(f"Removed existing video with audio: {output_path}")
+            except Exception as e:
+                print(f"Could not remove existing file: {e}")
+        
+        # 执行音频视频合并
+        result = merge_audio_video(video_file, audio_file, output_path, True)
+        
+        if not result["success"]:
+            return jsonify({"error": f"Failed to merge audio and video: {result['error']}"}), 500
+        
+        # 更新项目信息
+        new_video_info = {
+            'status': 'completed',
+            'file_path': output_path,
+            'url': f"/videos/{project_id}/{output_filename}",
+            'with_audio': True,
+            'original_video': project['video'],
+            'duration': result['output']['duration'],
+            'audio_info': {
+                'path': audio_file,
+                'duration': result['input_audio']['duration'],
+                'speed_ratio': result['speed_ratio']
+            },
+            'created_at': datetime.now().isoformat()
+        }
+        
+        # 保存项目视频信息
+        project['video'] = new_video_info
+        project['updated_at'] = datetime.now().isoformat()
+        save_project(project)
+        
+        return jsonify({
+            "success": True,
+            "message": "Audio successfully added to video",
+            "video": new_video_info
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error adding audio to video: {str(e)}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to add audio to video: {str(e)}"}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8888))

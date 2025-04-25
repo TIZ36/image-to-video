@@ -2,6 +2,7 @@
  * API Service for image-to-sales-video application
  * This file contains all the API calls to the backend
  */
+import { ENV, getApiUrl, getImageUrl as envGetImageUrl } from '../config/env';
 
 // Project interfaces
 export interface Project {
@@ -79,6 +80,8 @@ export interface VideoStatus {
   url?: string;
   duration?: number;
   error?: string;
+  with_audio?: boolean;
+  original_video?: VideoStatus;
 }
 
 // Add new interface for script generation request with prompts
@@ -119,8 +122,8 @@ export interface TemplatesListResponse {
   templates: PromptTemplate[];
 }
 
-// Define API base URL
-const API_BASE_URL = 'http://50.19.10.82:8888/api';
+// Define API base URL - using our environment configuration
+const getApiBaseUrl = () => `${ENV.API_BASE_URL()}/api`;
 
 /**
  * Create a new project
@@ -128,7 +131,7 @@ const API_BASE_URL = 'http://50.19.10.82:8888/api';
  * @returns A promise with the create project response
  */
 export async function createProject(data: CreateProjectRequest): Promise<CreateProjectResponse> {
-  const response = await fetch(`${API_BASE_URL}/projects`, {
+  const response = await fetch(`${getApiBaseUrl()}/projects`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -148,7 +151,7 @@ export async function createProject(data: CreateProjectRequest): Promise<CreateP
  * @returns A promise with the list projects response
  */
 export async function listProjects(): Promise<ListProjectsResponse> {
-  const response = await fetch(`${API_BASE_URL}/projects`);
+  const response = await fetch(`${getApiBaseUrl()}/projects`);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch projects: ${response.statusText}`);
@@ -163,7 +166,7 @@ export async function listProjects(): Promise<ListProjectsResponse> {
  * @returns A promise with the project details
  */
 export async function getProject(projectId: string): Promise<{success: boolean; project: Project}> {
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}`);
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}`);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch project: ${response.statusText}`);
@@ -182,7 +185,7 @@ export async function uploadImage(projectId: string, file: File): Promise<Upload
   const formData = new FormData();
   formData.append('image', file);
 
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/image`, {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}/image`, {
     method: 'POST',
     body: formData,
   });
@@ -200,7 +203,7 @@ export async function uploadImage(projectId: string, file: File): Promise<Upload
  * @returns A promise with the generated script
  */
 export async function generateScript(projectId: string, promptData?: GenerateScriptRequest): Promise<GenerateScriptResponse> {
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/script/generate`, {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}/script/generate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -222,7 +225,7 @@ export async function generateScript(projectId: string, promptData?: GenerateScr
  * @returns A promise with the update script response
  */
 export async function updateScript(projectId: string, data: UpdateScriptRequest): Promise<UpdateScriptResponse> {
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/script`, {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}/script`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -243,7 +246,7 @@ export async function updateScript(projectId: string, data: UpdateScriptRequest)
  * @returns A promise with the generate video response
  */
 export async function generateVideo(projectId: string): Promise<GenerateVideoResponse> {
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/video/generate`, {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}/video/generate`, {
     method: 'POST',
   });
 
@@ -265,7 +268,7 @@ export function getImageUrl(imagePath: string): string {
   const projectId = pathParts[pathParts.length - 2];
   const filename = pathParts[pathParts.length - 1];
   
-  return `${API_BASE_URL}/images/${projectId}/${filename}`;
+  return `${getApiBaseUrl()}/images/${projectId}/${filename}`;
 }
 
 /**
@@ -274,13 +277,38 @@ export function getImageUrl(imagePath: string): string {
  * @returns The full URL to the video
  */
 export function getVideoUrl(videoUrl: string): string {
+  if (!videoUrl) return '';
+  
   // If it's already a full URL (starts with http), return as is
   if (videoUrl.startsWith('http')) {
     return videoUrl;
   }
   
-  // Otherwise, it's a relative path, so prefix with API_BASE_URL
-  return `${API_BASE_URL}${videoUrl.startsWith('/') ? '' : '/'}${videoUrl}`;
+  // 检查并修正端口问题
+  // 如果URL中包含了3000端口，替换为8888
+  if (videoUrl.includes(':3000')) {
+    videoUrl = videoUrl.replace(':3000', ':8888');
+  }
+  
+  // 确保使用API_BASE_URL中的正确端口(8888)
+  const baseUrl = getApiBaseUrl();
+  
+  // 检查路径是否已经包含/api前缀，避免重复
+  if (videoUrl.startsWith('/api/') && baseUrl.endsWith('/api')) {
+    // 移除videoUrl开头的/api，避免重复
+    videoUrl = videoUrl.substring(4); // 去掉开头的/api
+    
+    // 确保保留开头的斜杠
+    if (!videoUrl.startsWith('/')) {
+      videoUrl = '/' + videoUrl;
+    }
+    
+    console.log('处理后的视频URL:', `${baseUrl}${videoUrl}`);
+    return `${baseUrl}${videoUrl}`;
+  }
+  
+  // 正常情况下合并路径
+  return `${baseUrl}${videoUrl.startsWith('/') ? '' : '/'}${videoUrl}`;
 }
 
 /**
@@ -289,7 +317,7 @@ export function getVideoUrl(videoUrl: string): string {
  * @returns A promise with the delete project response
  */
 export async function deleteProject(projectId: string): Promise<DeleteProjectResponse> {
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}`, {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}`, {
     method: 'DELETE',
   });
 
@@ -306,7 +334,7 @@ export async function deleteProject(projectId: string): Promise<DeleteProjectRes
  * @returns A promise with all project images
  */
 export async function getProjectImages(projectId: string): Promise<GetProjectImagesResponse> {
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/images`);
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}/images`);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch project images: ${response.statusText}`);
@@ -331,7 +359,7 @@ export async function generateScriptWithImage(
     ? imageId.map(id => `image_id=${id}`).join('&') 
     : `image_id=${imageId}`;
   
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/script/generate?${imageParam}`, {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}/script/generate?${imageParam}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -351,7 +379,7 @@ export async function generateScriptWithImage(
  * @returns A promise with all templates
  */
 export async function getPromptTemplates(): Promise<TemplatesListResponse> {
-  const response = await fetch(`${API_BASE_URL}/templates`);
+  const response = await fetch(`${getApiBaseUrl()}/templates`);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch templates: ${response.statusText}`);
@@ -366,7 +394,7 @@ export async function getPromptTemplates(): Promise<TemplatesListResponse> {
  * @returns A promise with the created template
  */
 export async function savePromptTemplate(data: SaveTemplateRequest): Promise<TemplateResponse> {
-  const response = await fetch(`${API_BASE_URL}/templates`, {
+  const response = await fetch(`${getApiBaseUrl()}/templates`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -388,7 +416,7 @@ export async function savePromptTemplate(data: SaveTemplateRequest): Promise<Tem
  * @returns A promise with the updated template
  */
 export async function updatePromptTemplate(templateId: string, data: UpdateTemplateRequest): Promise<TemplateResponse> {
-  const response = await fetch(`${API_BASE_URL}/templates/${templateId}`, {
+  const response = await fetch(`${getApiBaseUrl()}/templates/${templateId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -409,7 +437,7 @@ export async function updatePromptTemplate(templateId: string, data: UpdateTempl
  * @returns A promise with the delete response
  */
 export async function deletePromptTemplate(templateId: string): Promise<{success: boolean; message: string}> {
-  const response = await fetch(`${API_BASE_URL}/templates/${templateId}`, {
+  const response = await fetch(`${getApiBaseUrl()}/templates/${templateId}`, {
     method: 'DELETE',
   });
 
@@ -432,7 +460,7 @@ export async function generateSpeech(
   text?: string,
   language: string = 'zh-CN'
 ): Promise<{success: boolean; speech: {path: string, language: string}}> {
-  const url = `${API_BASE_URL}/projects/${projectId}/speech/generate${language ? `?language=${language}` : ''}`;
+  const url = `${getApiBaseUrl()}/projects/${projectId}/speech/generate${language ? `?language=${language}` : ''}`;
   
   // 处理文本，确保不包含"旁白文本:"前缀
   let processedText = text;
@@ -465,7 +493,7 @@ export async function generateSpeech(
  * @returns A promise with the list of speeches
  */
 export async function getProjectSpeeches(projectId: string): Promise<{success: boolean; speeches: Array<{path: string, created_at: string, language: string}>}> {
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/speech`);
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}/speech`);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch project speeches: ${response.statusText}`);
@@ -480,7 +508,7 @@ export async function getProjectSpeeches(projectId: string): Promise<{success: b
  * @returns A promise with the delete response
  */
 export async function deleteProjectSpeeches(projectId: string): Promise<{success: boolean; message: string}> {
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/speech`, {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}/speech`, {
     method: 'DELETE',
   });
 
@@ -503,7 +531,7 @@ export function getSpeechUrl(speechPath: string): string {
   }
   
   // Otherwise, it's a relative path, so prefix with API_BASE_URL
-  return `${API_BASE_URL}${speechPath.startsWith('/') ? '' : '/'}${speechPath}`;
+  return `${getApiBaseUrl()}${speechPath.startsWith('/') ? '' : '/'}${speechPath}`;
 }
 
 /**
@@ -513,7 +541,7 @@ export function getSpeechUrl(speechPath: string): string {
  * @returns A promise with the delete response
  */
 export async function deleteProjectImage(projectId: string, imageId: number): Promise<{success: boolean; message: string; images: ProjectImage[]}> {
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/images/${imageId}`, {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}/images/${imageId}`, {
     method: 'DELETE',
   });
 
@@ -522,4 +550,38 @@ export async function deleteProjectImage(projectId: string, imageId: number): Pr
   }
 
   return response.json();
-} 
+}
+
+/**
+ * Add audio to a video for a project
+ * @param projectId The ID of the project
+ * @returns A promise with the updated video information
+ */
+export async function addAudioToVideo(projectId: string): Promise<{success: boolean; video?: VideoStatus; message: string}> {
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}/video/add-audio`, {
+      method: 'POST',
+    });
+
+    // First handle HTTP error status
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      const errorMessage = errorData?.error || response.statusText;
+      throw new Error(`Failed to add audio to video: ${errorMessage}`);
+    }
+
+    // Then handle application logic errors
+    const data = await response.json();
+    if (!data.success) {
+      return {
+        success: false,
+        message: data.error || data.message || 'An unknown error occurred'
+      };
+    }
+
+    return data;
+  } catch (error) {
+    // Re-throw any fetch or parsing errors
+    throw error;
+  }
+}
