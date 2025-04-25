@@ -32,9 +32,17 @@ interface VideoPlayerProps {
   onReset: () => void;
   projectId?: string;
   selectedProject?: any;
+  onRefreshProject?: (projectId: string) => Promise<any>; // 添加刷新项目的回调
 }
 
-export default function VideoPlayer({ videoUrl, audioVideoUrl, onReset, projectId, selectedProject }: VideoPlayerProps) {
+export default function VideoPlayer({ 
+  videoUrl, 
+  audioVideoUrl, 
+  onReset, 
+  projectId, 
+  selectedProject,
+  onRefreshProject 
+}: VideoPlayerProps) {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [hasAvailableSpeech, setHasAvailableSpeech] = useState(false);
@@ -134,8 +142,16 @@ export default function VideoPlayer({ videoUrl, audioVideoUrl, onReset, projectI
       const result = await addAudioToVideo(projectId);
       
       if (result.success && result.video?.url) {
+        console.log('音频添加成功，视频URL:', result.video.url);
         setVideoWithAudio(result.video.url);
         setActiveTab(1); // 自动切换到有声视频标签
+        
+        // 如果有回调函数，调用刷新项目数据而不是重载页面
+        if (onRefreshProject) {
+          console.log('正在刷新项目数据...');
+          await onRefreshProject(projectId);
+          console.log('项目数据刷新完成');
+        }
       } else {
         // More user-friendly error messages based on common failure reasons
         let errorMessage = result.message || '添加音频失败';

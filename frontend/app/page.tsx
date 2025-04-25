@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Container, 
   Box, 
@@ -86,6 +86,9 @@ export default function Home() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(false);
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  
+  // 添加请求计数器，避免竞态条件
+  const requestCounterRef = useRef<number>(0);
 
   // 加载项目列表
   useEffect(() => {
@@ -108,19 +111,59 @@ export default function Home() {
   const handleProjectSelect = async (project: Project) => {
     try {
       setLoading(true);
+      
+      // 增加请求计数器
+      const requestId = ++requestCounterRef.current;
+      console.log(`开始加载项目 [请求ID: ${requestId}]`);
+      
+      // 刷新获取最新项目数据而不是使用传入的项目对象
       const response = await getProject(project.id);
-      setSelectedProject(response.project);
-      setProjectId(project.id);
+      
+      // 如果不是最新请求，则忽略结果
+      if (requestId !== requestCounterRef.current) {
+        console.log(`忽略过期的项目加载请求 [请求ID: ${requestId}]`);
+        return;
+      }
+      
+      const updatedProject = response.project;
+      
+      console.log('选择项目时刷新获取的项目数据:', updatedProject);
+      
+      // 更新选中的项目为最新数据
+      setSelectedProject(updatedProject);
+      setProjectId(updatedProject.id);
+      
+      // 重置相关状态
+      setVideoUrl(null);
       
       // 设置项目状态
-      if (project.image_path) {
+      if (updatedProject.image_path) {
         setActiveStep(1);
       }
       
-      if (project.video && project.video.url) {
-        setVideoUrl(project.video.url);
+      if (updatedProject.video && updatedProject.video.url) {
+        // 如果有视频URL，检查是无声还是有声视频
+        const audioVideoUrl = getProjectAudioVideoUrl(updatedProject);
+        const originalVideoUrl = getProjectOriginalVideoUrl(updatedProject);
+        
+        console.log('项目视频URL:', updatedProject.video.url);
+        console.log('有声视频URL:', audioVideoUrl);
+        console.log('原始视频URL:', originalVideoUrl);
+        
+        // 设置视频URL和状态
+        if (audioVideoUrl) {
+          setVideoUrl(audioVideoUrl);
+        } else {
+          setVideoUrl(originalVideoUrl || updatedProject.video.url);
+        }
+        
         setActiveStep(2);
       }
+      
+      // 更新项目列表中的项目
+      setProjects(prev => 
+        prev.map(p => p.id === updatedProject.id ? updatedProject : p)
+      );
     } catch (error) {
       console.error('Failed to load project:', error);
     } finally {
@@ -161,28 +204,61 @@ export default function Home() {
   };
 
   // Handle video generation completion
-  const handleVideoGenerated = (videoUrl: string) => {
-    setVideoUrl(videoUrl);
-    setActiveStep(2);
+  const handleVideoGenerated = async (videoUrl: string) => {
+    if (!projectId) {
+      console.error('项目ID未设置，无法刷新项目数据');
+      return;
+    }
     
-    // 刷新项目列表
-    if (projectId) {
-      fetchUpdatedProject(projectId);
+    try {
+      console.log('视频生成完成，URL:', videoUrl);
+      
+      // 先设置视频URL
+      setVideoUrl(videoUrl);
+      setActiveStep(2);
+      
+      // 刷新获取最新项目数据
+      await fetchUpdatedProject(projectId);
+      
+      console.log('视频生成后刷新的项目数据:', selectedProject);
+    } catch (error) {
+      console.error('视频生成后刷新项目失败:', error);
     }
   };
 
   // 获取更新后的项目详情
   const fetchUpdatedProject = async (projectId: string) => {
     try {
+      // 增加请求计数器
+      const requestId = ++requestCounterRef.current;
+      console.log(`开始刷新项目 [请求ID: ${requestId}]`);
+      
+      setLoading(true);
       const response = await getProject(projectId);
-      setSelectedProject(response.project);
+      
+      // 如果不是最新请求，则忽略结果
+      if (requestId !== requestCounterRef.current) {
+        console.log(`忽略过期的项目刷新请求 [请求ID: ${requestId}]`);
+        return null;
+      }
+      
+      const updatedProject = response.project;
+      console.log('获取更新的项目数据:', updatedProject);
+      
+      // 更新选中的项目
+      setSelectedProject(updatedProject);
       
       // 更新项目列表中的项目
       setProjects(prev => 
-        prev.map(p => p.id === projectId ? response.project : p)
+        prev.map(p => p.id === projectId ? updatedProject : p)
       );
+      
+      return updatedProject;
     } catch (error) {
       console.error('Failed to update project:', error);
+      return null;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -415,6 +491,7 @@ export default function Home() {
                               onReset={handleReset} 
                               projectId={projectId || selectedProject?.id}
                               selectedProject={selectedProject}
+                              onRefreshProject={fetchUpdatedProject}
                             />
                           </Box>
                         </Paper>
