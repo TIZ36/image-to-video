@@ -86,30 +86,30 @@ export interface VideoStatus {
 
 // Add new interface for script generation request with prompts
 export interface GenerateScriptRequest {
-  systemPrompt?: string;
-  userPrompt?: string;
+  system_prompt: string;
+  user_prompt: string;
 }
 
 // Add new interfaces for prompt templates with editable fields
 export interface PromptTemplate {
   id: string;
   name: string;
-  systemPrompt: string;
-  userPrompt: string;
+  system_prompt: string;
+  user_prompt: string;
   createdAt?: string;
   updatedAt?: string;
 }
 
 export interface SaveTemplateRequest {
   name: string;
-  systemPrompt: string;
-  userPrompt: string;
+  system_prompt: string;
+  user_prompt: string;
 }
 
 export interface UpdateTemplateRequest {
   name?: string;
-  systemPrompt?: string;
-  userPrompt?: string;
+  system_prompt?: string;
+  user_prompt?: string;
 }
 
 export interface TemplateResponse {

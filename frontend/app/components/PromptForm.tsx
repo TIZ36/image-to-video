@@ -52,8 +52,8 @@ import EditablePrompt, {
 interface Preset {
   id: string;
   name: string;
-  systemPrompt: string;
-  userPrompt: string;
+  system_prompt: string;
+  user_prompt: string;
 }
 
 interface ScriptOutput {
@@ -113,20 +113,20 @@ const DEFAULT_PRESETS: Preset[] = [
   {
     id: 'default-1',
     name: '专业销售视频',
-    systemPrompt: '你是一位专业的广告文案撰写人员，擅长创作吸引人的{{product_type:科技产品}}销售视频脚本。',
-    userPrompt: '请根据图片内容，创作一段简短有力的产品销售脚本，突出产品的{{feature_focus:主要特点和价值}}。'
+    system_prompt: '你是一位专业的广告文案撰写人员，擅长创作吸引人的{{product_type:科技产品}}销售视频脚本。',
+    user_prompt: '请根据图片内容，创作一段简短有力的产品销售脚本，突出产品的{{feature_focus:主要特点和价值}}。'
   },
   {
     id: 'default-2',
     name: '情感故事视频',
-    systemPrompt: '你是一位擅长讲述感人故事的文案创作者，能够将产品与{{emotion_type:日常生活}}情感体验相结合。',
-    userPrompt: '请根据图片内容创作一个情感化的故事脚本，将产品融入到能引起{{target_audience:年轻家庭}}共鸣的场景中。'
+    system_prompt: '你是一位擅长讲述感人故事的文案创作者，能够将产品与{{emotion_type:日常生活}}情感体验相结合。',
+    user_prompt: '请根据图片内容创作一个情感化的故事脚本，将产品融入到能引起{{target_audience:年轻家庭}}共鸣的场景中。'
   },
   {
     id: 'default-3',
     name: '技术特性展示',
-    systemPrompt: '你是一位精通{{industry:科技}}行业的文案撰写人员，能够清晰解释复杂的产品特性。',
-    userPrompt: '请根据图片内容创作一个简洁明了的脚本，重点展示产品的{{tech_feature:技术特性}}和优势。'
+    system_prompt: '你是一位精通{{industry:科技}}行业的文案撰写人员，能够清晰解释复杂的产品特性。',
+    user_prompt: '请根据图片内容创作一个简洁明了的脚本，重点展示产品的{{tech_feature:技术特性}}和优势。'
   }
 ];
 
@@ -221,11 +221,15 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
 
   // 处理文本输入更改
   const handleSystemPromptChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSystemPrompt(event.target.value);
+    const value = event.target.value;
+    console.log('Setting system prompt:', value);
+    setSystemPrompt(value);
   };
 
   const handleUserPromptChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setUserPrompt(event.target.value);
+    const value = event.target.value;
+    console.log('Setting user prompt:', value);
+    setUserPrompt(value);
   };
 
   const handleDescriptionChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -241,13 +245,30 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
     setSelectedImageIds(ids);
   };
   
+  // 使用模板时的处理函数
+  const handleUseTemplate = (template: Preset | PromptTemplate) => {
+    console.log('Using template:', template);
+    setSystemPrompt(template.system_prompt);
+    setUserPrompt(template.user_prompt);
+    
+    // Check if template has editable sections
+    if (hasEditableSections(template.system_prompt) || hasEditableSections(template.user_prompt)) {
+      setProcessedSystemPrompt(template.system_prompt);
+      setProcessedUserPrompt(template.user_prompt);
+    } else {
+      setProcessedSystemPrompt('');
+      setProcessedUserPrompt('');
+    }
+  };
+
   // 打开预设对话框
   const handleOpenPresetDialog = (preset: Preset | PromptTemplate | null = null) => {
+    console.log('Opening preset dialog with:', preset);
     setCurrentPreset(preset);
     if (preset) {
       setNewPresetName(preset.name);
-      setSystemPrompt(preset.systemPrompt);
-      setUserPrompt(preset.userPrompt);
+      setSystemPrompt(preset.system_prompt);
+      setUserPrompt(preset.user_prompt);
     } else {
       setNewPresetName('');
     }
@@ -263,8 +284,8 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
     const newPreset: Preset = {
       id: currentPreset?.id || `preset-${Date.now()}`,
       name: newPresetName.trim(),
-      systemPrompt,
-      userPrompt
+      system_prompt: systemPrompt,
+      user_prompt: userPrompt
     };
 
     if (currentPreset) {
@@ -276,9 +297,6 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
     }
 
     setPresetDialogOpen(false);
-    
-    // TODO: Here we would also save to Redis on the backend
-    // savePresetToBackend(newPreset);
   };
 
   // 删除预设
@@ -291,8 +309,8 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
 
   // 使用预设
   const handleUsePreset = (preset: Preset) => {
-    setSystemPrompt(preset.systemPrompt);
-    setUserPrompt(preset.userPrompt);
+    setSystemPrompt(preset.system_prompt);
+    setUserPrompt(preset.user_prompt);
   };
   
   // Add template fetch on component mount
@@ -324,23 +342,24 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
     if (!newPresetName.trim()) {
       return;
     }
-    
+
     const templateData = {
       name: newPresetName.trim(),
-      systemPrompt,
-      userPrompt
+      system_prompt: systemPrompt,
+      user_prompt: userPrompt
     };
-    
+
     try {
       setLoading(true);
+      console.log('Saving template:', templateData);
       
       if (currentPreset && currentPreset.id.startsWith('preset-')) {
         // Update existing local preset
         const newPreset: Preset = {
           id: currentPreset.id,
           name: newPresetName.trim(),
-          systemPrompt,
-          userPrompt
+          system_prompt: systemPrompt,
+          user_prompt: userPrompt
         };
         
         setPresets(prev => prev.map(p => p.id === currentPreset.id ? newPreset : p));
@@ -394,21 +413,6 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
     }
   };
 
-  // Use template - combine local presets and online templates
-  const handleUseTemplate = (template: Preset | PromptTemplate) => {
-    setSystemPrompt(template.systemPrompt);
-    setUserPrompt(template.userPrompt);
-    
-    // Check if template has editable sections
-    if (hasEditableSections(template.systemPrompt) || hasEditableSections(template.userPrompt)) {
-      setProcessedSystemPrompt(template.systemPrompt);
-      setProcessedUserPrompt(template.userPrompt);
-    } else {
-      setProcessedSystemPrompt('');
-      setProcessedUserPrompt('');
-    }
-  };
-
   // Handle processed prompt changes from EditablePrompt
   const handleProcessedSystemPromptChange = (prompt: string) => {
     setProcessedSystemPrompt(prompt);
@@ -456,8 +460,8 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
     try {
       // Create the prompt data with system and user prompts
       const promptData = {
-        systemPrompt: `${processedSystemPrompt || systemPrompt}\n `,
-        userPrompt: `${processedUserPrompt || userPrompt}\n\n请将脚本分为两部分：\n1. 视频描述：简短介绍视频内容\n2. 旁白文本：详细的语音旁白内容，`
+        system_prompt: `${processedSystemPrompt || systemPrompt}\n `,
+        user_prompt: `${processedUserPrompt || userPrompt}\n\n请将脚本分为两部分：\n1. 视频描述：简短介绍视频内容\n2. 旁白文本：详细的语音旁白内容，`
       };
       
       let result;
@@ -467,6 +471,7 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
         // 将所有选中的图片ID传递给后端
         console.log('selectedImageIds', selectedImageIds);
         console.log('imageId', imageId);
+        console.log('promptData', promptData);
         result = await generateScriptWithImage(imageId, selectedImageIds, promptData);
       } else {
         setError('请选择至少一张图片');
@@ -572,6 +577,15 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
     }
   };
 
+  // 在模板列表中显示预设
+  const renderTemplateSecondary = (template: Preset | PromptTemplate) => {
+    const prompt = template.system_prompt || '';
+    if (hasEditableSections(prompt)) {
+      return '包含可编辑变量';
+    }
+    return prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt;
+  };
+
   return (
     <Box sx={{ width: '100%' }}>
       {imageId && (
@@ -602,8 +616,8 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
             <Typography component="div" sx={{ display: 'flex', alignItems: 'center' }}>
             <SettingsIcon sx={{ mr: 1 }} />
             提示词设置
-            {(systemPrompt !== DEFAULT_PRESETS[0].systemPrompt || 
-              userPrompt !== DEFAULT_PRESETS[0].userPrompt) && (
+            {(systemPrompt !== DEFAULT_PRESETS[0].system_prompt || 
+              userPrompt !== DEFAULT_PRESETS[0].user_prompt) && (
                 <Chip 
                   size="small" 
                 label="已修改" 
@@ -763,9 +777,9 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
                   >
                     <ListItemText
                       primary={preset.name}
-                      secondary={hasEditableSections(preset.systemPrompt) ? '包含可编辑变量' : preset.systemPrompt.substring(0, 60) + '...'}
+                      secondary={renderTemplateSecondary(preset)}
                       sx={{ cursor: 'pointer' }}
-                      onClick={() => handleUsePreset(preset)}
+                      onClick={() => handleUseTemplate(preset)}
                     />
                     <ListItemSecondaryAction>
                       <IconButton 
@@ -815,9 +829,9 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
                   >
                     <ListItemText
                       primary={template.name}
-                      secondary={hasEditableSections(template.systemPrompt) ? '包含可编辑变量' : template.systemPrompt.substring(0, 60) + '...'}
+                      secondary={renderTemplateSecondary(template)}
                       sx={{ cursor: 'pointer' }}
-                      onClick={() => handleUsePreset(template)}
+                      onClick={() => handleUseTemplate(template)}
                     />
                     <ListItemSecondaryAction>
                       <IconButton 

@@ -149,9 +149,15 @@ def update_project_images_metadata(project_id):
     images = []
     for img_id in image_ids:
         image_path = f"/api/images/{project_id}-image-{img_id}"
+        # 保持现有的selected状态，如果没有则默认为false
+        existing_image = next((img for img in project.get('images', []) if img.get('id') == img_id), None)
+        selected = existing_image.get('selected', False) if existing_image else False
+        
         images.append({
             "id": img_id,
-            "path": image_path
+            "path": image_path,
+            "selected": selected,  # 添加selected字段
+            "created_at": datetime.now().isoformat()  # 添加创建时间
         })
     
     # 更新项目图片信息
@@ -387,77 +393,101 @@ def generate_script(project_id):
         if not image_ids:
             return jsonify({"error": "No image_id provided"}), 400
         
-        # Get image paths
-        image_paths = []
+        # Get prompt data from request body
+        data = request.json or {}
+        system_prompt = data.get('system_prompt')  # 修改为前端发送的参数名
+        user_prompt = data.get('user_prompt')      # 修改为前端发送的参数名
+        
+        # 记录接收到的prompt
+        print(f"Received prompts for project {project_id}:")
+        print(f"System prompt: {system_prompt}")
+        print(f"User prompt: {user_prompt}")
+        
+        # 保存prompt模板到项目中
+        if system_prompt is not None or user_prompt is not None:
+            project['prompt_template'] = {
+                'system_prompt': system_prompt,
+                'user_prompt': user_prompt,
+                'updated_at': datetime.now().isoformat()
+            }
+            save_project(project)
+            print(f"Saved prompt template to project: {project['prompt_template']}")
+        
+        # 处理所有选中的图片
+        processed_images = []
         for img_id in image_ids:
             try:
                 img_id = int(img_id)
-                image_path = f"/api/images/{project_id}-image-{img_id}"
-                image_paths.append(image_path)
+                # 获取图片数据
+                image_key = f"image:{project_id}-image-{img_id}"
+                data_url = redis_client.get(image_key)
+                
+                if not data_url:
+                    return jsonify({"error": f"Image {img_id} not found in database"}), 404
+                
+                # 处理data URL
+                if data_url.startswith('data:'):
+                    parts = data_url.split(',', 1)
+                    if len(parts) < 2:
+                        return jsonify({"error": f"Invalid image format for image {img_id}"}), 500
+                    base64_data = parts[1]
+                else:
+                    base64_data = data_url
+                
+                # 创建临时文件
+                with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
+                    temp_file.write(base64.b64decode(base64_data))
+                    processed_images.append({
+                        'id': img_id,
+                        'path': temp_file.name
+                    })
             except ValueError:
                 return jsonify({"error": f"Invalid image ID: {img_id}"}), 400
         
-        # Get prompt data
-        prompt_data = request.json or {}
-        system_prompt = prompt_data.get('systemPrompt', '')
-        user_prompt = prompt_data.get('userPrompt', '')
-        
-        # Process images and generate script
         try:
-            # Get image data from Redis
-            image_key = f"image:{project_id}-image-{image_ids[0]}"
-            data_url = redis_client.get(image_key)
+            # 使用第一张图片生成脚本
+            main_image = processed_images[0]
             
-            if not data_url:
-                return jsonify({"error": "Image not found in database"}), 404
+            # 获取之前保存的prompt模板（如果没有新的prompt被提供）
+            if system_prompt is None or user_prompt is None:
+                saved_template = project.get('prompt_template', {})
+                if system_prompt is None:
+                    system_prompt = saved_template.get('system_prompt')
+                if user_prompt is None:
+                    user_prompt = saved_template.get('user_prompt')
+                print(f"Using saved prompts - System: {system_prompt}, User: {user_prompt}")
             
-            # Process data URL
-            if data_url.startswith('data:'):
-                parts = data_url.split(',', 1)
-                if len(parts) < 2:
-                    return jsonify({"error": "Invalid image format"}), 500
-                base64_data = parts[1]
-            else:
-                base64_data = data_url
+            # 生成脚本
+            script = llm_client.generate_script(
+                project_id,
+                main_image['id'],
+                project['name'],
+                project.get('description', ''),
+                system_prompt=system_prompt,
+                user_prompt=user_prompt
+            )
             
-            # Create temporary file
-            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
-                try:
-                    temp_file.write(base64.b64decode(base64_data))
-                    temp_image_path = temp_file.name
+            # 更新项目
+            project['script'] = script
+            project['selected_images'] = [{'id': img['id']} for img in processed_images]
+            project['updated_at'] = datetime.now().isoformat()
+            save_project(project)
+            
+            return jsonify({
+                "success": True,
+                "script": script,
+                "project": project
+            })
+        finally:
+            # 清理临时文件
+            for img in processed_images:
+                if os.path.exists(img['path']):
+                    os.unlink(img['path'])
                     
-                    # Generate script
-                    script = llm_client.generate_script(
-                        project_id,
-                        image_ids[0],
-                        project['name'],
-                        project.get('description', ''),
-                        system_prompt=system_prompt,
-                        user_prompt=user_prompt
-                    )
-                    
-                    # Update project with new script
-                    project['script'] = script
-                    project['updated_at'] = datetime.now().isoformat()
-                    save_project(project)
-                    
-                    return jsonify({
-                        "success": True,
-                        "script": script
-                    })
-                finally:
-                    # Clean up temporary file
-                    if os.path.exists(temp_image_path):
-                        os.unlink(temp_image_path)
-        except Exception as e:
-            app.logger.error(f"Error generating script: {str(e)}")
-            app.logger.error(traceback.format_exc())
-            return jsonify({"error": f"Failed to generate script: {str(e)}"}), 500
-            
     except Exception as e:
-        app.logger.error(f"Unexpected error in generate_script: {str(e)}")
-        app.logger.error(traceback.format_exc())
-        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+        print(f"Error in generate_script: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({"error": f"Failed to generate script: {str(e)}"}), 500
 
 @app.route('/api/projects/<project_id>/script', methods=['PUT'])
 def update_script(project_id):
@@ -738,40 +768,53 @@ def upload_project_image(project_id):
         return jsonify({"error": "No image selected"}), 400
     
     if file and allowed_file(file.filename):
-        # 读取文件数据
-        file_data = file.read()
-        
-        # 确定MIME类型
-        file_ext = file.filename.split('.')[-1].lower() if '.' in file.filename else 'jpg'
-        mime_type = {
-            'jpg': 'image/jpeg',
-            'jpeg': 'image/jpeg',
-            'png': 'image/png',
-            'gif': 'image/gif'
-        }.get(file_ext, 'image/jpeg')
-        
-        # 转换为base64
-        base64_encoded = base64.b64encode(file_data).decode('utf-8')
-        
-        # 获取下一个图片ID
-        image_id = get_next_image_id(project_id)
-        
-        # 创建Redis键
-        image_key = f"image:{project_id}-image-{image_id}"
-        
-        # 存储完整的data URL
-        redis_client.set(image_key, f"data:{mime_type};base64,{base64_encoded}")
-        
-        # 更新项目图片元数据
-        update_project_images_metadata(project_id)
-        
-        # 返回结果
-        return jsonify({
-            "success": True,
-            "message": "Image uploaded successfully",
-            "image_id": image_id,
-            "image_path": f"/api/images/{project_id}-image-{image_id}"
-        })
+        try:
+            # 读取文件数据
+            file_data = file.read()
+            
+            # 确定MIME类型
+            file_ext = file.filename.split('.')[-1].lower() if '.' in file.filename else 'jpg'
+            mime_type = {
+                'jpg': 'image/jpeg',
+                'jpeg': 'image/jpeg',
+                'png': 'image/png',
+                'gif': 'image/gif'
+            }.get(file_ext, 'image/jpeg')
+            
+            # 转换为base64
+            base64_encoded = base64.b64encode(file_data).decode('utf-8')
+            
+            # 获取下一个图片ID
+            image_id = get_next_image_id(project_id)
+            
+            # 创建Redis键
+            image_key = f"image:{project_id}-image-{image_id}"
+            
+            # 存储完整的data URL
+            data_url = f"data:{mime_type};base64,{base64_encoded}"
+            redis_client.set(image_key, data_url)
+            
+            # 更新项目图片元数据
+            project = update_project_images_metadata(project_id)
+            
+            # 如果这是第一张图片，自动选中它
+            if len(project.get('images', [])) == 1:
+                for img in project['images']:
+                    if img['id'] == image_id:
+                        img['selected'] = True
+                        break
+                save_project(project)
+            
+            # 返回结果
+            return jsonify({
+                "success": True,
+                "message": "Image uploaded successfully",
+                "image_id": image_id,
+                "image_path": f"/api/images/{project_id}-image-{image_id}",
+                "project": project  # 返回更新后的完整项目信息
+            })
+        except Exception as e:
+            return jsonify({"error": f"Failed to upload image: {str(e)}"}), 500
     
     return jsonify({"error": "Invalid file type"}), 400
 
@@ -942,7 +985,7 @@ def create_template():
     """Create a new prompt template"""
     data = request.json
     
-    if not data or 'name' not in data or 'systemPrompt' not in data or 'userPrompt' not in data:
+    if not data or 'name' not in data or 'system_prompt' not in data or 'user_prompt' not in data:
         return jsonify({"error": "Missing required template data"}), 400
     
     try:
@@ -953,8 +996,8 @@ def create_template():
         template = {
             "id": template_id,
             "name": data['name'],
-            "systemPrompt": data['systemPrompt'],
-            "userPrompt": data['userPrompt'],
+            "system_prompt": data['system_prompt'],
+            "user_prompt": data['user_prompt'],
             "createdAt": now,
             "updatedAt": now
         }
@@ -990,10 +1033,10 @@ def update_template(template_id):
         # Update template fields
         if 'name' in data:
             template['name'] = data['name']
-        if 'systemPrompt' in data:
-            template['systemPrompt'] = data['systemPrompt']
-        if 'userPrompt' in data:
-            template['userPrompt'] = data['userPrompt']
+        if 'system_prompt' in data:
+            template['system_prompt'] = data['system_prompt']
+        if 'user_prompt' in data:
+            template['user_prompt'] = data['user_prompt']
         
         template['updatedAt'] = datetime.now().isoformat()
         
@@ -1481,6 +1524,88 @@ def add_audio_to_video(project_id):
         app.logger.error(f"Error adding audio to video: {str(e)}")
         app.logger.error(traceback.format_exc())
         return jsonify({"error": f"Failed to add audio to video: {str(e)}"}), 500
+
+@app.route('/api/projects/<project_id>/prompt-template', methods=['GET'])
+def get_prompt_template(project_id):
+    """获取项目的prompt模板"""
+    project = get_project(project_id)
+    
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+    
+    template = project.get('prompt_template', {
+        'system_prompt': '',
+        'user_prompt': '',
+        'updated_at': None
+    })
+    
+    return jsonify({
+        "success": True,
+        "template": template
+    })
+
+@app.route('/api/projects/<project_id>/prompt-template', methods=['PUT'])
+def update_prompt_template(project_id):
+    """更新项目的prompt模板"""
+    project = get_project(project_id)
+    
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+    
+    data = request.json
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    
+    template = {
+        'system_prompt': data.get('system_prompt', ''),
+        'user_prompt': data.get('user_prompt', ''),
+        'updated_at': datetime.now().isoformat()
+    }
+    
+    project['prompt_template'] = template
+    project['updated_at'] = datetime.now().isoformat()
+    save_project(project)
+    
+    return jsonify({
+        "success": True,
+        "template": template,
+        "project": project
+    })
+
+@app.route('/api/projects/<project_id>/images/<int:image_id>/select', methods=['PUT'])
+def select_project_image(project_id, image_id):
+    """选择或取消选择项目图片"""
+    project = get_project(project_id)
+    
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+    
+    # 检查图片是否存在
+    image_key = f"image:{project_id}-image-{image_id}"
+    if not redis_client.exists(image_key):
+        return jsonify({"error": "Image not found"}), 404
+    
+    # 获取选择状态
+    data = request.json or {}
+    selected = data.get('selected', True)  # 默认为选中
+    
+    # 更新图片选择状态
+    images = project.get('images', [])
+    for img in images:
+        if img['id'] == image_id:
+            img['selected'] = selected
+            break
+    
+    # 保存项目
+    project['images'] = images
+    project['updated_at'] = datetime.now().isoformat()
+    save_project(project)
+    
+    return jsonify({
+        "success": True,
+        "message": f"Image {'selected' if selected else 'unselected'} successfully",
+        "project": project
+    })
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8888))

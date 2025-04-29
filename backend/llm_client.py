@@ -107,7 +107,6 @@ class OpenAIClient(LLMClient):
             Generated marketing script text
         """
         try:
-
             print(f"Generating script for project: {project_name}")
             print(f"Image path: {image_id}")
             print(f"System prompt: {system_prompt}")
@@ -154,19 +153,18 @@ class OpenAIClient(LLMClient):
             
             # 使用新的OpenAI API调用方式
             try:
-                # 先尝试使用新的API格式
                 messages = [
                     {"role": "system", "content": system_prompt},
                     {
                         "role": "user", 
                         "content": [
                             {"type": "text", "text": user_prompt},
-                            # {
-                            #     "type": "image_url",
-                            #     "image_url": {
-                            #         "url": f"data:image/jpeg;base64,{base64_image}"
-                            #     }
-                            # }
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            }
                         ]
                     }
                 ]
