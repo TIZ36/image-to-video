@@ -810,8 +810,8 @@ def upload_project_image(project_id):
                 "success": True,
                 "message": "Image uploaded successfully",
                 "image_id": image_id,
-                "image_path": f"/api/images/{project_id}-image-{image_id}",
-                "project": project  # 返回更新后的完整项目信息
+                    "image_path": f"/api/images/{project_id}-image-{image_id}",
+                    "project": project  # 返回更新后的完整项目信息
             })
         except Exception as e:
             return jsonify({"error": f"Failed to upload image: {str(e)}"}), 500
@@ -1076,9 +1076,15 @@ def delete_template(template_id):
 def generate_speech(project_id):
     """Generate speech audio from project script"""
     try:
+        # Get provider from query parameters
+        provider = request.args.get('provider', 'elevenlabs').lower()
+        
+        # Set the TTS provider in environment
+        os.environ['TTS_PROVIDER'] = provider
+        
         global tts_client
-        if tts_client is None:
-            tts_client = get_tts_client()
+        # Reset the TTS client to use the new provider
+        tts_client = get_tts_client()
         
         project = get_project(project_id)
         

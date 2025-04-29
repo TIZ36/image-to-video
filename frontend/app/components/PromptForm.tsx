@@ -25,7 +25,10 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemSecondaryAction
+  ListItemSecondaryAction,
+  FormControl,
+  Select,
+  MenuItem
 } from '@mui/material';
 import MovieIcon from '@mui/icons-material/Movie';
 import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver';
@@ -163,6 +166,9 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
   const [editMode, setEditMode] = useState(false);
   const [showTemplateHelp, setShowTemplateHelp] = useState(false);
   
+  // Add TTS provider selection
+  const [ttsProvider, setTtsProvider] = useState<'elevenlabs' | 'openai'>('elevenlabs');
+  
   // 处理面板展开/收起
   const handleAccordionChange = (panel: string) => (event: React.SyntheticEvent, isExpanded: boolean) => {
     setExpanded(isExpanded ? panel : false);
@@ -260,7 +266,7 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
       setProcessedUserPrompt('');
     }
   };
-
+  
   // 打开预设对话框
   const handleOpenPresetDialog = (preset: Preset | PromptTemplate | null = null) => {
     console.log('Opening preset dialog with:', preset);
@@ -342,13 +348,13 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
     if (!newPresetName.trim()) {
       return;
     }
-
+    
     const templateData = {
       name: newPresetName.trim(),
       system_prompt: systemPrompt,
       user_prompt: userPrompt
     };
-
+    
     try {
       setLoading(true);
       console.log('Saving template:', templateData);
@@ -546,8 +552,9 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
     setError(null);
     
     try {
+      console.log(`Generating speech using ${ttsProvider}`);
       // 调用生成语音API - 直接传递narration内容，不需要前缀
-      const result = await generateSpeech(imageId, scriptOutput.narration);
+      const result = await generateSpeech(imageId, scriptOutput.narration, 'zh-CN', ttsProvider);
       
       if (result.success && result.speech.path) {
         // 获取完整URL
@@ -936,7 +943,18 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
               sx={{ mb: 2 }}
             />
             
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+              <FormControl sx={{ mr: 2, minWidth: 120 }}>
+                <Select
+                  size="small"
+                  value={ttsProvider}
+                  onChange={(e) => setTtsProvider(e.target.value as 'elevenlabs' | 'openai')}
+                >
+                  <MenuItem value="elevenlabs">Eleven Labs</MenuItem>
+                  <MenuItem value="openai">OpenAI TTS</MenuItem>
+                </Select>
+              </FormControl>
+              
               {speechUrl && (
                 <Button
                   variant="outlined"
@@ -957,8 +975,8 @@ export default function PromptForm({ imageId, onVideoGenerated, existingScript, 
               >
                 {isGeneratingVoice ? '生成中...' : '生成语音'}
               </Button>
-                  </Box>
-              </Box>
+            </Box>
+          </Box>
         </AccordionDetails>
       </Accordion>
       

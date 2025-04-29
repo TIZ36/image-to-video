@@ -453,14 +453,16 @@ export async function deletePromptTemplate(templateId: string): Promise<{success
  * @param projectId The ID of the project
  * @param text Optional text to use for speech generation
  * @param language Optional language code
+ * @param provider Optional TTS provider
  * @returns A promise with the speech generation response
  */
 export async function generateSpeech(
   projectId: string, 
   text?: string,
-  language: string = 'zh-CN'
+  language: string = 'zh-CN',
+  provider: 'elevenlabs' | 'openai' = 'elevenlabs'
 ): Promise<{success: boolean; speech: {path: string, language: string}}> {
-  const url = `${getApiBaseUrl()}/projects/${projectId}/speech/generate${language ? `?language=${language}` : ''}`;
+  const url = `${getApiBaseUrl()}/projects/${projectId}/speech/generate${language ? `?language=${language}` : ''}${provider ? `&provider=${provider}` : ''}`;
   
   // 处理文本，确保不包含"旁白文本:"前缀
   let processedText = text;

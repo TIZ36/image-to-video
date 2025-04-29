@@ -156,20 +156,31 @@ class ElevenLabsClient(TTSClient):
                 "error": error_msg
             }
 
-class MockTTSClient(TTSClient):
-    """Mock TTS client for testing without API access"""
+class OpenAITTSClient(TTSClient):
+    """OpenAI TTS Client"""
+    
+    def __init__(self):
+        """Initialize the OpenAI TTS client"""
+        super().__init__()
+        self.api_key = os.getenv('OPENAI_API_KEY', self.api_key)
+        self.api_endpoint = "https://api.openai.com/v1/audio/speech"
+        self.model = os.getenv('OPENAI_TTS_MODEL', 'gpt-4o-mini-tts')
+        self.voice = os.getenv('OPENAI_TTS_VOICE', 'sage')  # alloy, echo, fable, onyx, nova, shimmer
+        
+        if not self.api_key:
+            print("Warning: OPENAI_API_KEY environment variable not set")
     
     def generate_speech(self, text, project_id, language="zh-CN"):
         """
-        Generate a mock speech file
+        Generate speech using OpenAI TTS API
         
         Args:
-            text: The text to convert to speech (not used)
+            text: The text to convert to speech
             project_id: The project ID to associate with the speech
-            language: The language of the text (not used)
+            language: The language of the text (not used for OpenAI TTS)
             
         Returns:
-            Path to a mock speech file
+            Path to the generated speech file
         """
         try:
             # 首先清理旧的语音文件
@@ -181,35 +192,46 @@ class MockTTSClient(TTSClient):
             
             # 创建输出文件路径
             timestamp = int(time.time())
-            output_filename = f"mock_speech_{timestamp}.mp3"
+            output_filename = f"speech_{timestamp}.mp3"
             output_path = os.path.join(project_speech_folder, output_filename)
             
-            # 复制一个示例MP3文件作为模拟（如果存在）
-            sample_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sample_speech.mp3')
+            # 构建请求头和数据
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
             
-            if os.path.exists(sample_file):
-                shutil.copy(sample_file, output_path)
-            else:
-                # 创建一个空的MP3文件
-                with open(output_path, 'wb') as f:
-                    f.write(b'')
+            data = {
+                "model": self.model,
+                "input": text,
+                "voice": self.voice
+            }
             
-            print(f"Mock speech file created: {output_path}")
+            print(f"Generating speech for project {project_id} using OpenAI TTS API")
+            print(f"Text: {text[:100]}{'...' if len(text) > 100 else ''}")
             
-            # 返回相对于speeches目录的路径，用于API响应
+            # 发送请求并保存结果
+            response = requests.post(self.api_endpoint, headers=headers, json=data)
+            response.raise_for_status()
+            
+            # 保存音频文件
+            with open(output_path, 'wb') as f:
+                f.write(response.content)
+            
+            # 返回相对路径（用于API响应）
             relative_path = f"/speeches/{project_id}/{output_filename}"
+            
             return {
                 "status": "success",
                 "path": relative_path,
-                "full_path": output_path
+                "duration": None  # OpenAI API doesn't provide duration info
             }
-                
+            
         except Exception as e:
-            error_msg = f"Exception generating mock speech: {str(e)}"
-            print(error_msg)
+            print(f"Error generating speech with OpenAI TTS: {str(e)}")
             return {
                 "status": "error",
-                "error": error_msg
+                "error": str(e)
             }
 
 def get_tts_client():
@@ -220,17 +242,16 @@ def get_tts_client():
     Returns:
         TTS client instance
     """
-    # 检查是否使用模拟客户端
-    use_mock = os.getenv('USE_MOCK_TTS', 'false').lower() == 'true'
-    if use_mock:
-        print("Using mock TTS client")
-        return MockTTSClient()
-    
+    # 获取TTS提供商配置
     provider = os.getenv('TTS_PROVIDER', 'elevenlabs').lower()
     
-    if provider == 'elevenlabs':
+    if provider == 'openai':
+        print("Using OpenAI TTS client")
+        return OpenAITTSClient()
+    elif provider == 'elevenlabs':
+        print("Using Eleven Labs TTS client")
         return ElevenLabsClient()
     else:
-        # 默认使用Eleven Labs
+        # Default to Eleven Labs if provider not recognized
         print(f"Warning: Unrecognized TTS provider '{provider}', using Eleven Labs")
         return ElevenLabsClient() 
